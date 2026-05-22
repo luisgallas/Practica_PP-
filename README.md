@@ -78,6 +78,8 @@ git clone https://github.com/luisgallas/Practica_PP-.git
 cd Practica_PP-
 ```
 
+> **Nota del examen:** trabajar en una rama separada como `nombre_apellido_parcial1` y luego abrir un Pull Request hacia `main`.
+
 ### 2. Crear un Entorno Virtual
 
 ```bash
@@ -104,6 +106,8 @@ Copiar el archivo `.env.example` a `.env` y actualizar las credenciales:
 cp .env.example .env
 ```
 
+> No se debe commitear `.env` al repositorio. Solo se incluye `.env.example` como guía.
+
 Editar `.env` con tus credenciales de PostgreSQL:
 
 ```env
@@ -126,6 +130,8 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 ```sql
 CREATE DATABASE practica_pp;
 ```
+
+> Asegúrate de tener PostgreSQL instalado y de que `DB_USER`/`DB_PASSWORD` coincidan con tu configuración local.
 
 ### 6. Ejecutar Migraciones
 
