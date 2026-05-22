@@ -6,7 +6,7 @@ def home(request):  # Define una función / método.
     """Página principal del backend"""
     from presupuesto.models import Propiedad  # Importa nombres concretos desde un módulo.
 
-    propiedades = Propiedad.objects.all().prefetch_related('amenities', 'id_anfitrion')  # Consulta o crea objetos en la base de datos.
+    propiedades = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities')  # Consulta o crea objetos en la base de datos.
     return render(request, 'home.html', {  # Devuelve un valor desde la función.
         'propiedades': propiedades,
     })

@@ -1,16 +1,18 @@
 from django.contrib import admin  # Importa el módulo de administración de Django.
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin  # Importa la configuración base para usuarios.
 from .models import Usuario, Propiedad, PropiedadAmenity, Disponibilidad, Reserva, Notificacion, Review, Amenity  # Importa los modelos de la app presupuesto.
 
 
 @admin.register(Usuario)  # Registra el modelo Usuario en el panel de administración de Django.
-class UsuarioAdmin(admin.ModelAdmin):  # Define la configuración de admin para el modelo Usuario.
+class UsuarioAdmin(BaseUserAdmin):  # Define la configuración de admin para el modelo Usuario.
     list_display = ('username', 'get_full_name', 'email', 'telefono', 'rol', 'fecha_registro')  # Campos que se muestran en la lista de usuarios.
     list_filter = ('rol', 'fecha_registro')  # Filtros disponibles en la barra lateral para el listado.
     search_fields = ('username', 'email', 'first_name', 'last_name', 'telefono')  # Campos que se pueden buscar.
-    fieldsets = (  # Organiza los campos del formulario de admin en secciones.
-        ('Información Personal', {'fields': ('username', 'email', 'first_name', 'last_name', 'telefono')}),  # Grupo de campos personales.
-        ('Roles y Permisos', {'fields': ('rol', 'is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),  # Grupo de roles y permisos.
-        ('Fechas', {'fields': ('last_login', 'date_joined', 'fecha_registro')}),  # Grupo de campos de tiempo.
+    fieldsets = BaseUserAdmin.fieldsets + (  # Organiza los campos del formulario de admin en secciones.
+        ('Información adicional', {'fields': ('rol', 'telefono', 'fecha_registro')}),  # Grupo de campos propios.
+    )
+    add_fieldsets = BaseUserAdmin.add_fieldsets + (  # Campos al crear usuarios nuevos desde el admin.
+        ('Información adicional', {'fields': ('rol', 'telefono')}),  # Grupo de campos propios.
     )
     readonly_fields = ('fecha_registro', 'last_login', 'date_joined')  # Campos que no pueden editarse desde el admin.
 
@@ -59,7 +61,6 @@ class ReservaAdmin(admin.ModelAdmin):  # Define la configuración de admin para 
         ('Fechas', {'fields': ('fecha_inicio', 'fecha_fin')}),  # Grupo de fechas.
         ('Huéspedes y Precios', {'fields': ('cantidad_huespedes', 'precio_total')}),  # Grupo de cantidad y precio.
     )
-    readonly_fields = ('precio_total',)  # Precio total no editable desde el admin.
     date_hierarchy = 'fecha_inicio'  # Navegación por fecha de inicio.
 
 
