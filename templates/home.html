@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Practica PP - Inicio</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f8f9fa; }
+        header { background: #004080; color: white; padding: 24px 32px; }
+        main { padding: 24px 32px; }
+        .card { background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 18px; padding: 20px; }
+        .card h2 { margin: 0 0 8px; }
+        .card p { margin: 0 0 10px; }
+        .badge { display: inline-block; background: #007bff; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.9rem; }
+        .amenities { margin-top: 10px; }
+        .amenities span { display: inline-block; margin-right: 6px; margin-bottom: 4px; padding: 4px 8px; background: #e9ecef; border-radius: 8px; font-size: 0.9rem; }
+        .empty { text-align: center; color: #555; margin-top: 48px; }
+        a { color: #004080; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Practica PP - Sistema de Alquiler</h1>
+        <p>Tu backend Django está corriendo y aquí ves los datos reales del proyecto.</p>
+    </header>
+    <main>
+        {% if propiedades %}
+            {% for propiedad in propiedades %}
+                <div class="card">
+                    <h2>{{ propiedad.titulo }}</h2>
+                    <p><strong>Ubicación:</strong> {{ propiedad.ubicacion }}</p>
+                    <p><strong>Descripción:</strong> {{ propiedad.descripcion }}</p>
+                    <p><strong>Anfitrión:</strong> {{ propiedad.id_anfitrion.username }} ({{ propiedad.id_anfitrion.get_rol_display }})</p>
+                    <p><strong>Precio noche:</strong> ${{ propiedad.precio_noche }} | <strong>Fin de semana:</strong> ${{ propiedad.precio_fin_semana }}</p>
+                    <p class="badge">Estado: {{ propiedad.get_estado_display }}</p>
+                    {% if propiedad.amenities.all %}
+                        <div class="amenities">
+                            {% for amenity in propiedad.amenities.all %}
+                                <span>{{ amenity.nombre }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty">
+                <h2>Aún no hay propiedades cargadas</h2>
+                <p>Ejecuta el comando <code>python manage.py seed_data</code> y recarga esta página.</p>
+            </div>
+        {% endif %}
+        <div class="card">
+            <h2>API disponible</h2>
+            <p>También puedes ver los datos desde la API en <a href="/api/">/api/</a>.</p>
+        </div>
+    </main>
+</body>
+</html>
