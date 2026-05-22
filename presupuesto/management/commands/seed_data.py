@@ -100,7 +100,7 @@ class Command(BaseCommand):  # Define una clase Python.
             reservas.append(reserva)
         
         # Crear Notificaciones
-        for i, reserva in enumerate(reservas[:3]):  # Inicia una estructura de bloque en Python.
+        for i, reserva in enumerate(reservas):  # Inicia una estructura de bloque en Python.
             notificacion, created = Notificacion.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
                 id_usuario=reserva.id_huesped,
                 id_reserva=reserva,
@@ -110,10 +110,10 @@ class Command(BaseCommand):  # Define una clase Python.
                 }
             )
             if created:
-                self.stdout.write(self.style.SUCCESS(f'Notificacion creada para {notificacion.id_usuario.username}'))
+                self.stdout.write(self.style.SUCCESS(f'Notificación creada para {notificacion.id_usuario.username}'))
         
         # Crear Reviews
-        for i, reserva in enumerate(reservas[:3]):  # Inicia una estructura de bloque en Python.
+        for i, reserva in enumerate(reservas):  # Inicia una estructura de bloque en Python.
             review, created = Review.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
                 id_reserva=reserva,
                 defaults={  # Proporciona valores por defecto para la creación de un objeto.
