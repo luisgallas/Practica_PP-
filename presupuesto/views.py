@@ -1,20 +1,34 @@
-from django.shortcuts import render  # Importa nombres concretos desde un módulo.
-from django.http import JsonResponse  # Importa nombres concretos desde un módulo.
+from django.http import JsonResponse
+from django.shortcuts import render
+from rest_framework import generics
+
+from presupuesto.models import Propiedad
+from presupuesto.serializers import PropiedadSerializer
 
 
-def home(request):  # Define una función / método.
-    """Página principal del backend"""
-    from presupuesto.models import Propiedad  # Importa nombres concretos desde un módulo.
-
-    propiedades = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities')  # Consulta o crea objetos en la base de datos.
-    return render(request, 'home.html', {  # Devuelve un valor desde la función.
+def home(request):
+    """Pagina principal del backend."""
+    propiedades = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities')
+    return render(request, 'home.html', {
         'propiedades': propiedades,
     })
 
 
-def api_info(request):  # Define una función / método.
-    """Endpoint básico de información"""
-    return JsonResponse({  # Devuelve un valor desde la función.
+def api_info(request):
+    """Endpoint basico de informacion."""
+    return JsonResponse({
         'mensaje': 'API Practica PP',
-        'versión': '1.0.0'
+        'version': '1.0.0',
     })
+
+
+class PropiedadListAPIView(generics.ListAPIView):
+    """Lista todas las propiedades."""
+    queryset = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities')
+    serializer_class = PropiedadSerializer
+
+
+class PropiedadDetailAPIView(generics.RetrieveAPIView):
+    """Muestra el detalle de una propiedad."""
+    queryset = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities')
+    serializer_class = PropiedadSerializer

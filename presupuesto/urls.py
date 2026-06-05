@@ -1,6 +1,10 @@
-from django.urls import path  # Importa nombres concretos desde un módulo.
-from presupuesto.views import api_info  # Importa nombres concretos desde un módulo.
+from django.urls import path
 
-urlpatterns = [  # Define la lista de rutas URL del proyecto o aplicación.
-    path('', api_info, name='api_info'),  # Define una ruta URL y la vista asociada.
+from presupuesto.views import api_info, PropiedadDetailAPIView, PropiedadListAPIView
+
+
+urlpatterns = [
+    path('', api_info, name='api_info'),
+    path('propiedades/', PropiedadListAPIView.as_view(), name='propiedad-list'),
+    path('propiedades/<int:pk>/', PropiedadDetailAPIView.as_view(), name='propiedad-detail'),
 ]
