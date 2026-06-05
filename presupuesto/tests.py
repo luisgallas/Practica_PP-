@@ -1,6 +1,22 @@
+from django.apps import apps
+from django.contrib.admin.sites import AdminSite
 from django.test import TestCase
 
-from presupuesto.models import Propiedad, Usuario
+from presupuesto.admin import ReviewAdmin
+from presupuesto.models import Propiedad, Review, Usuario
+
+
+class AdminConfigTest(TestCase):
+    def test_app_label_is_reservas(self):
+        self.assertEqual(apps.get_app_config('presupuesto').verbose_name, 'Reservas')
+
+    def test_review_admin_is_read_only(self):
+        review_admin = ReviewAdmin(Review, AdminSite())
+
+        self.assertFalse(review_admin.has_add_permission(None))
+        self.assertFalse(review_admin.has_change_permission(None))
+        self.assertFalse(review_admin.has_delete_permission(None))
+        self.assertIn('calificacion_estrellas', review_admin.readonly_fields)
 
 
 class UsuarioModelTest(TestCase):
