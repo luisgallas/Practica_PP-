@@ -74,7 +74,21 @@ class NotificacionAdmin(admin.ModelAdmin):  # Define la configuración de admin 
 
 @admin.register(Review)  # Registra el modelo Review en el admin.
 class ReviewAdmin(admin.ModelAdmin):  # Define la configuración de admin para Review.
-    list_display = ('id_propiedad', 'id_usuario', 'calificacion', 'fecha')  # Muestra propiedad, usuario, calificación y fecha.
+    list_display = ('id_propiedad', 'id_usuario', 'calificacion_estrellas', 'fecha')  # Muestra propiedad, usuario, calificación y fecha.
     list_filter = ('calificacion', 'fecha')  # Filtros para calificación y fecha.
     search_fields = ('id_usuario__username', 'id_propiedad__titulo', 'comentario')  # Permite buscar reseñas por usuario, propiedad o comentario.
-    readonly_fields = ('fecha',)  # Fecha no se puede editar.
+    fields = ('id_reserva', 'id_propiedad', 'id_usuario', 'calificacion_estrellas', 'comentario', 'fecha')
+    readonly_fields = fields  # Las reviews se consultan en el admin, no se cargan ni modifican.
+
+    @admin.display(description='Calificacion')
+    def calificacion_estrellas(self, obj):
+        return obj.get_calificacion_display()
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
