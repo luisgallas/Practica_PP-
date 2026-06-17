@@ -1,0 +1,89 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Inicio</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label='presupuesto' %}">Presupuesto</a>
+    &rsaquo; Preguntar a la IA
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+    <p>
+        Esta pantalla usa la misma logica de <code>/api/agent/chat/</code>.
+        Sirve para comprobar que el asistente responde con datos reales del backend.
+    </p>
+
+    <p>
+        Usa <strong>Admin</strong> para ver datos globales,
+        <strong>Anfitrion</strong> para ver sus reservas,
+        o <strong>Huesped</strong> para consultar disponibilidad y preparar reservas.
+    </p>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {{ form.pending_action }}
+
+        <fieldset class="module aligned">
+            <div class="form-row">
+                {{ form.usuario.errors }}
+                <div>
+                    {{ form.usuario.label_tag }}
+                    {{ form.usuario }}
+                    {% if form.usuario.help_text %}
+                        <div class="help">{{ form.usuario.help_text }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="form-row">
+                {{ form.message.errors }}
+                <div>
+                    {{ form.message.label_tag }}
+                    {{ form.message }}
+                </div>
+            </div>
+
+            {% if pending_action_json %}
+                <div class="form-row">
+                    {{ form.confirm.errors }}
+                    <div>
+                        {{ form.confirm }}
+                        {{ form.confirm.label_tag }}
+                        {% if form.confirm.help_text %}
+                            <div class="help">{{ form.confirm.help_text }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        </fieldset>
+
+        <div class="submit-row">
+            <input type="submit" value="Preguntar a la IA" class="default">
+            <a class="button cancel-link" href="{% url 'admin:index' %}">Volver</a>
+        </div>
+    </form>
+
+    {% if result %}
+        <div class="module">
+            <h2>Respuesta de la IA</h2>
+            <p><strong>Intencion detectada:</strong> {{ result.intent }}</p>
+            <p style="font-size: 1.1em;">{{ result.reply }}</p>
+
+            {% if pending_action_json %}
+                <p>
+                    <strong>Accion pendiente:</strong>
+                    la IA todavia no creo la reserva. Marca "Confirmar accion pendiente"
+                    y envia de nuevo para crearla.
+                </p>
+            {% endif %}
+
+            <details>
+                <summary>Ver JSON completo</summary>
+                <pre style="white-space: pre-wrap;">{{ result_json }}</pre>
+            </details>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

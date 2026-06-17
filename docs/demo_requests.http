@@ -1,0 +1,50 @@
+### Salud del backend
+GET http://127.0.0.1:8000/api/health/
+
+### Propiedades reales
+GET http://127.0.0.1:8000/api/properties/
+
+### Disponibilidad directa
+GET http://127.0.0.1:8000/api/availability/?start_date=2026-07-20&end_date=2026-07-25&guests=2
+
+### Agente: disponibilidad
+POST http://127.0.0.1:8000/api/agent/chat/
+Content-Type: application/json
+
+{
+  "message": "Hay propiedades disponibles del 20 al 25 de julio para 2 personas?"
+}
+
+### Agente: amenities
+POST http://127.0.0.1:8000/api/agent/chat/
+Content-Type: application/json
+
+{
+  "message": "Que amenities tiene la Quinta Guaira? Acepta mascotas?"
+}
+
+### Agente: reviews
+POST http://127.0.0.1:8000/api/agent/chat/
+Content-Type: application/json
+
+{
+  "message": "Que resenas tiene la Quinta Guaira?"
+}
+
+### Agente: preparar reserva sin crear todavia
+POST http://127.0.0.1:8000/api/agent/chat/
+Content-Type: application/json
+
+{
+  "message": "Quiero reservar esta propiedad para el 15 de agosto en la Quinta Guaira",
+  "user_id": 6
+}
+
+### Agente: anfitrion
+POST http://127.0.0.1:8000/api/agent/chat/
+Content-Type: application/json
+
+{
+  "message": "Hay reservas pendientes de confirmar?",
+  "user_id": 2
+}
