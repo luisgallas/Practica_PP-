@@ -24,8 +24,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework',
-    'presupuesto',
+    'rest_framework',  # Agrega Django REST Framework a las aplicaciones instaladas
+    'presupuesto.apps.PresupuestoConfig',
 ]
 
 MIDDLEWARE = [

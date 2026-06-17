@@ -1,0 +1,36 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".actions").forEach(function (actions) {
+        if (actions.querySelector(".delete-selected-button")) {
+            return;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "button delete-selected-button";
+        button.textContent = "Eliminar seleccionado";
+
+        button.addEventListener("click", function () {
+            const selected = document.querySelectorAll('input.action-select:checked');
+            if (!selected.length) {
+                alert("Selecciona al menos una propiedad para eliminar.");
+                return;
+            }
+
+            const actionSelect = actions.querySelector('select[name="action"]');
+            const goButton = actions.querySelector('button[name="index"]');
+            if (actionSelect && goButton) {
+                actionSelect.value = "eliminar_propiedades_seleccionadas";
+                goButton.click();
+            }
+        });
+
+        actions.appendChild(button);
+    });
+});
+</script>
+{% endblock %}

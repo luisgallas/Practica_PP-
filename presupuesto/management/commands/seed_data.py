@@ -1,129 +1,133 @@
-from django.core.management.base import BaseCommand  # Importa nombres concretos desde un módulo.
-from django.contrib.auth import get_user_model  # Importa nombres concretos desde un módulo.
-from presupuesto.models import Propiedad, Amenity, Disponibilidad, Reserva, Notificacion, Review  # Importa nombres concretos desde un módulo.
-from datetime import datetime, timedelta  # Importa nombres concretos desde un módulo.
+from datetime import date, timedelta
+from decimal import Decimal
 
-User = get_user_model()
+from django.core.management.base import BaseCommand
+
+from presupuesto.agent import SYSTEM_PROMPT
+from presupuesto.models import AgenteIAConfig, Amenity, Disponibilidad, Propiedad, Reserva, Review, Usuario
+from presupuesto.services import sync_reservation_availability
 
 
-class Command(BaseCommand):  # Define una clase Python.
-    help = 'Carga datos de prueba en la base de datos'  # Texto de ayuda para un comando custom de Django.
+class Command(BaseCommand):
+    help = "Carga datos de ejemplo para probar el booking y el agente."
 
-    def handle(self, *args, **options):  # Define una función / método.
-        # Limpiar datos previos (opcional)
-        self.stdout.write(self.style.WARNING('Creando datos de prueba...'))
-        
-        # Crear Usuarios
-        users = []
-        for i in range(5):  # Inicia una estructura de bloque en Python.
-            username = f'usuario{i+1}'
-            email = f'usuario{i+1}@example.com'
-            user, created = User.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                username=username,
-                defaults={  # Proporciona valores por defecto para la creación de un objeto.
-                    'email': email,
-                    'first_name': f'Usuario',
-                    'last_name': f'{i+1}',
-                    'rol': 'anfitrion' if i % 2 == 0 else 'huesped',
-                    'telefono': f'555-000{i+1}',
-                    'is_active': True,
-                }
+    def handle(self, *args, **options):
+        admin, _ = Usuario.objects.get_or_create(
+            username="admin",
+            defaults={
+                "email": "admin@test.com",
+                "rol": "admin",
+                "is_staff": True,
+                "is_superuser": True,
+            },
+        )
+        admin.set_password("admin123")
+        admin.save()
+
+        host, _ = Usuario.objects.get_or_create(
+            username="anfitrion1",
+            defaults={"first_name": "Juan", "last_name": "Perez", "email": "anfitrion@test.com", "rol": "anfitrion"},
+        )
+        host.set_password("test123")
+        host.save()
+
+        guest, _ = Usuario.objects.get_or_create(
+            username="huesped1",
+            defaults={"first_name": "Huesped", "last_name": "Demo", "email": "huesped@test.com", "rol": "huesped"},
+        )
+        guest.set_password("test123")
+        guest.save()
+
+        AgenteIAConfig.objects.update_or_create(
+            nombre="Agente IA de Booking",
+            defaults={
+                "descripcion": (
+                    "Asistente para administradores, anfitriones y huespedes. Consulta propiedades, "
+                    "amenities, resenas, disponibilidad y reservas usando datos reales del backend."
+                ),
+                "system_prompt": SYSTEM_PROMPT,
+                "endpoint_chat": "/api/agent/chat/",
+                "endpoint_disponibilidad": "/api/availability/",
+                "endpoint_reservas": "/api/reservations/",
+                "endpoint_propiedades": "/api/properties/",
+                "requiere_confirmacion_reserva": True,
+                "activo": True,
+            },
+        )
+
+        amenity_names = [
+            "WIFI",
+            "PISCINA",
+            "COCINA COMPLETA",
+            "TV SMART",
+            "LAVADORA",
+            "ESTACIONAMIENTO",
+            "JARDIN",
+            "AIRE ACONDICIONADO",
+        ]
+        amenities = {name: Amenity.objects.get_or_create(nombre=name)[0] for name in amenity_names}
+
+        property_specs = [
+            ("Casa cerca del centro", "Hermosa casa con vistas al centro de la ciudad", "Calle Principal 123", "Villarrica", 150, 200, 50, ["WIFI", "PISCINA", "COCINA COMPLETA"]),
+            ("Departamento moderno", "Depto moderno en zona residencial", "Avenida Independencia 456", "Asuncion", 100, 150, 30, ["TV SMART", "LAVADORA", "ESTACIONAMIENTO", "JARDIN"]),
+            ("Cabana en la montana", "Cabana tranquila rodeada de naturaleza", "Camino Rural 789", "Caacupe", 80, 120, 40, ["PISCINA", "COCINA COMPLETA", "TV SMART"]),
+            ("Quinta Guaira", "Quinta de descanso para familias y grupos chicos", "Ruta 8 km 4", "Villarrica", 50000, 80000, 30000, ["WIFI", "PISCINA", "ESTACIONAMIENTO"]),
+        ]
+
+        properties = []
+        for title, description, street, city, week_price, weekend_price, cleaning_fee, names in property_specs:
+            prop, _ = Propiedad.objects.update_or_create(
+                titulo=title,
+                defaults={
+                    "descripcion": description,
+                    "calle": street,
+                    "ubicacion": city,
+                    "precio_noche": Decimal(str(week_price)),
+                    "precio_fin_semana": Decimal(str(weekend_price)),
+                    "tarifa_limpieza": Decimal(str(cleaning_fee)),
+                    "estado": "disponible",
+                    "id_anfitrion": host,
+                },
             )
-            users.append(user)
-            if created:
-                user.set_password('password123')  # Establece la contraseña guardada y cifrada del usuario.
-                user.save()
-                self.stdout.write(self.style.SUCCESS(f'Usuario creado: {username}'))
-        
-        # Crear Amenities
-        amenities_names = ['WiFi', 'Piscina', 'Estacionamiento', 'Aire acondicionado', 'TV']
-        amenities = []
-        for name in amenities_names:
-            amenity, created = Amenity.objects.get_or_create(nombre=name)  # Consulta o crea objetos en la base de datos.
-            amenities.append(amenity)
-            if created:
-                self.stdout.write(self.style.SUCCESS(f'Amenity creada: {name}'))
-        
-        # Crear Propiedades
-        propiedades = []
-        locations = ['Buenos Aires', 'Córdoba', 'Mendoza', 'Rosario', 'La Plata']
-        for i in range(5):  # Inicia una estructura de bloque en Python.
-            propiedad, created = Propiedad.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                titulo=f'Casa Hermosa {i+1}',
-                defaults={  # Proporciona valores por defecto para la creación de un objeto.
-                    'id_anfitrion': users[i % 3],
-                    'descripcion': f'Descripción de la propiedad {i+1}. Una hermosa casa con vistas increíbles.',
-                    'ubicacion': locations[i],
-                    'precio_noche': 100 + (i * 50),
-                    'precio_fin_semana': 150 + (i * 50),
-                    'tarifa_limpieza': 30,
-                    'estado': 'disponible',
-                }
-            )
-            if created:
-                # Agregar amenities
-                propiedad.amenities.set(amenities[:3])
-                self.stdout.write(self.style.SUCCESS(f'Propiedad creada: {propiedad.titulo}'))
-            propiedades.append(propiedad)
-        
-        # Crear Disponibilidades
-        for propiedad in propiedades:
-            for days_ahead in range(30):  # Inicia una estructura de bloque en Python.
-                fecha = datetime.now().date() + timedelta(days=days_ahead)
-                disponibilidad, created = Disponibilidad.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                    id_propiedad=propiedad,
-                    fecha=fecha,
-                    defaults={'estado': 'disponible'}  # Proporciona valores por defecto para la creación de un objeto.
+            properties.append(prop)
+            prop.amenities.set(amenities[name] for name in names)
+
+        pending_reservation, _ = Reserva.objects.get_or_create(
+            id_propiedad=properties[0],
+            id_huesped=guest,
+            fecha_inicio=date(2026, 6, 20),
+            fecha_fin=date(2026, 6, 22),
+            defaults={"cantidad_huespedes": 2, "estado": "pendiente", "precio_total": Decimal("400.00")},
+        )
+        sync_reservation_availability(pending_reservation)
+
+        review_reservation, _ = Reserva.objects.get_or_create(
+            id_propiedad=properties[3],
+            id_huesped=guest,
+            fecha_inicio=date(2026, 5, 10),
+            fecha_fin=date(2026, 5, 12),
+            defaults={"cantidad_huespedes": 2, "estado": "confirmada", "precio_total": Decimal("190000.00")},
+        )
+        sync_reservation_availability(review_reservation)
+        Review.objects.update_or_create(
+            id_reserva=review_reservation,
+            defaults={
+                "id_propiedad": properties[3],
+                "id_usuario": guest,
+                "calificacion": 5,
+                "comentario": "Excelente quinta, muy comoda y limpia.",
+            },
+        )
+
+        for prop in properties:
+            for offset in range(0, 45):
+                Disponibilidad.objects.get_or_create(
+                    id_propiedad=prop,
+                    fecha=date(2026, 7, 1) + timedelta(days=offset),
+                    defaults={"estado": "disponible"},
                 )
-                if created and days_ahead < 5:
-                    self.stdout.write(f'  Disponibilidad creada para {propiedad.titulo} ({fecha})')
-        
-        # Crear Reservas
-        reservas = []
-        for i in range(5):  # Inicia una estructura de bloque en Python.
-            fecha_inicio = datetime.now().date() + timedelta(days=5 + (i*5))
-            fecha_fin = fecha_inicio + timedelta(days=3)
-            
-            reserva, created = Reserva.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                id_propiedad=propiedades[i],
-                fecha_inicio=fecha_inicio,
-                defaults={  # Proporciona valores por defecto para la creación de un objeto.
-                    'id_huesped': users[(i+1) % len(users)],
-                    'fecha_fin': fecha_fin,
-                    'cantidad_huespedes': 2 + i,
-                    'estado': 'confirmada',
-                    'precio_total': 300 + (i * 100),
-                }
-            )
-            if created:
-                self.stdout.write(self.style.SUCCESS(f'Reserva creada: #{reserva.id}'))
-            reservas.append(reserva)
-        
-        # Crear Notificaciones
-        for i, reserva in enumerate(reservas):  # Inicia una estructura de bloque en Python.
-            notificacion, created = Notificacion.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                id_usuario=reserva.id_huesped,
-                id_reserva=reserva,
-                defaults={  # Proporciona valores por defecto para la creación de un objeto.
-                    'mensaje': f'Tu reserva en {reserva.id_propiedad.titulo} ha sido confirmada.',
-                    'estado': 'no_leida',
-                }
-            )
-            if created:
-                self.stdout.write(self.style.SUCCESS(f'Notificación creada para {notificacion.id_usuario.username}'))
-        
-        # Crear Reviews
-        for i, reserva in enumerate(reservas):  # Inicia una estructura de bloque en Python.
-            review, created = Review.objects.get_or_create(  # Consulta o crea objetos en la base de datos.
-                id_reserva=reserva,
-                defaults={  # Proporciona valores por defecto para la creación de un objeto.
-                    'id_propiedad': reserva.id_propiedad,
-                    'id_usuario': reserva.id_huesped,
-                    'calificacion': 4 + (i % 2),
-                    'comentario': f'Excelente propiedad. El anfitrión fue muy amable y la ubicación es perfecta.',
-                }
-            )
-            if created:
-                self.stdout.write(self.style.SUCCESS(f'Review creada: {review.calificacion} estrellas'))
-        
-        self.stdout.write(self.style.SUCCESS('Datos de prueba cargados exitosamente!'))
+
+        for reserva in Reserva.objects.filter(estado__in=["pendiente", "confirmada"]).select_related("id_propiedad"):
+            sync_reservation_availability(reserva)
+
+        self.stdout.write(self.style.SUCCESS("Datos de ejemplo cargados correctamente."))
