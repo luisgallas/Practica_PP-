@@ -2,10 +2,11 @@
 
 ## Caso de uso
 
-El agente ayuda a dos perfiles del sistema:
+El agente ayuda a tres perfiles del sistema:
 
 - Huesped: consulta propiedades, amenities, resenas, disponibilidad y prepara reservas.
 - Anfitrion: consulta cantidad de reservas y reservas pendientes de confirmar.
+- Admin: consulta reservas globales del sistema.
 
 El agente usa datos reales del backend Django y de `db.sqlite3`. Para acciones que crean o modifican reservas, no ejecuta nada hasta recibir confirmacion explicita.
 
@@ -164,7 +165,8 @@ curl.exe -X POST "http://127.0.0.1:8000/api/agent/chat/" -H "Content-Type: appli
 
 ```powershell
 python manage.py check
+python manage.py makemigrations --check --dry-run
 python manage.py test presupuesto
 ```
 
-Resultado verificado: `3 tests OK`.
+Resultado verificado: `9 tests OK`.
