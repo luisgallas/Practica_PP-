@@ -3,12 +3,21 @@ import json
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.shortcuts import render
+from django.utils import timezone
 from django.utils.html import format_html
 
 from . import agent
-from .models import AgenteIAConfig, Amenity, Disponibilidad, Notificacion, PreguntarIA, Propiedad, Reserva, Review, Usuario
-from .services import sync_reservation_availability
+from .models import AgenteIAConfig, Amenity, Disponibilidad, HistorialPropiedadVisitada, Notificacion, PreguntarIA, Propiedad, PropiedadFoto, Reserva, Review, Usuario
+from .services import (
+    BLOCKING_AVAILABILITY_STATES,
+    BLOCKING_RESERVATION_STATES,
+    calculate_price,
+    sync_reservation_availability,
+    update_reservation_status,
+)
 
 
 ADMIN_MODEL_ORDER = {
@@ -39,16 +48,99 @@ def ordered_get_app_list(request, app_label=None):
 admin.site.get_app_list = ordered_get_app_list
 
 
+def is_admin_role(user):
+    return user.is_superuser or getattr(user, "rol", None) == "admin"
+
+
+class RoleAdminMixin:
+    allowed_roles = ("admin",)
+    add_roles = ("admin",)
+    change_roles = ("admin",)
+    delete_roles = ("admin",)
+
+    def role_allowed(self, request, roles=None):
+        roles = roles or self.allowed_roles
+        return request.user.is_active and (is_admin_role(request.user) or request.user.rol in roles)
+
+    def has_module_permission(self, request):
+        return self.role_allowed(request)
+
+    def has_view_permission(self, request, obj=None):
+        return self.role_allowed(request)
+
+    def has_add_permission(self, request):
+        return self.role_allowed(request, self.add_roles)
+
+    def has_change_permission(self, request, obj=None):
+        return self.role_allowed(request, self.change_roles)
+
+    def has_delete_permission(self, request, obj=None):
+        return self.role_allowed(request, self.delete_roles)
+
+    def get_model_perms(self, request):
+        return {
+            "view": self.has_view_permission(request),
+            "add": self.has_add_permission(request),
+            "change": self.has_change_permission(request),
+            "delete": self.has_delete_permission(request),
+        }
+
+
 @admin.register(Usuario)
-class UsuarioAdmin(UserAdmin):
+class UsuarioAdmin(RoleAdminMixin, UserAdmin):
+    allowed_roles = ("admin",)
     fieldsets = UserAdmin.fieldsets + (
         ("Datos de booking", {"fields": ("rol", "telefono", "fecha_registro")}),
     )
     list_display = ("username", "email", "rol", "is_staff", "is_active")
 
 
-admin.site.register(Amenity)
-admin.site.register(Notificacion)
+@admin.register(Amenity)
+class AmenityAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "anfitrion")
+    add_roles = ("admin", "anfitrion")
+    change_roles = ("admin", "anfitrion")
+    delete_roles = ("admin",)
+    search_fields = ("nombre",)
+
+
+@admin.register(Notificacion)
+class NotificacionAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "anfitrion", "huesped")
+    add_roles = ("admin",)
+    change_roles = ("admin",)
+    delete_roles = ("admin",)
+    list_display = ("id_usuario", "mensaje", "estado", "fecha")
+    readonly_fields = ("mensaje", "estado", "fecha", "id_usuario", "id_reserva")
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_role(request.user):
+            return queryset
+        return queryset.filter(id_usuario=request.user)
+
+
+@admin.register(HistorialPropiedadVisitada)
+class HistorialPropiedadVisitadaAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "huesped")
+    add_roles = ("admin",)
+    change_roles = ("admin",)
+    delete_roles = ("admin",)
+    list_display = ("id_usuario", "id_propiedad", "fecha_visita", "cantidad_visitas")
+    readonly_fields = ("id_usuario", "id_propiedad", "fecha_visita", "cantidad_visitas")
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_role(request.user):
+            return queryset
+        return queryset.filter(id_usuario=request.user)
+
+
+class PropiedadFotoInline(admin.TabularInline):
+    model = PropiedadFoto
+    fields = ("foto", "descripcion", "es_portada", "fecha_publicacion")
+    readonly_fields = ("fecha_publicacion",)
+    extra = 1
 
 
 @admin.action(description="Eliminar seleccionado")
@@ -59,11 +151,23 @@ def eliminar_propiedades_seleccionadas(modeladmin, request, queryset):
 
 
 @admin.register(Propiedad)
-class PropiedadAdmin(admin.ModelAdmin):
+class PropiedadAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "anfitrion", "huesped")
+    add_roles = ("admin", "anfitrion")
+    change_roles = ("admin", "anfitrion")
+    delete_roles = ("admin", "anfitrion")
     change_list_template = "admin/presupuesto/propiedad/change_list.html"
-    list_display = ("titulo", "ubicacion", "calle", "estado", "precio_noche_guaranies")
+    list_display = (
+        "titulo",
+        "ubicacion",
+        "tipo_alojamiento",
+        "capacidad_maxima_huespedes",
+        "estado",
+        "precio_noche_guaranies",
+    )
     search_fields = ("titulo", "ubicacion", "calle", "descripcion")
-    list_filter = ("estado", "ubicacion", "amenities")
+    list_filter = ("estado", "tipo_alojamiento", "politica_cancelacion", "ubicacion", "amenities", "permite_mascotas", "permite_fumar", "permite_fiestas")
+    inlines = [PropiedadFotoInline]
     actions = [eliminar_propiedades_seleccionadas]
     actions_on_top = True
     actions_on_bottom = True
@@ -71,6 +175,34 @@ class PropiedadAdmin(admin.ModelAdmin):
     @admin.display(description="Precio noche")
     def precio_noche_guaranies(self, obj):
         return f"Gs. {int(obj.precio_noche):,}".replace(",", ".")
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_role(request.user):
+            return queryset
+        if request.user.rol == "huesped":
+            return queryset.filter(estado="disponible")
+        return queryset.filter(id_anfitrion=request.user)
+
+    def get_readonly_fields(self, request, obj=None):
+        if request.user.rol == "huesped":
+            return [field.name for field in self.model._meta.fields] + ["amenities"]
+        return super().get_readonly_fields(request, obj)
+
+    def get_exclude(self, request, obj=None):
+        if getattr(request.user, "rol", None) == "anfitrion":
+            return ("id_anfitrion",)
+        return super().get_exclude(request, obj)
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "id_anfitrion" and not is_admin_role(request.user):
+            kwargs["queryset"] = Usuario.objects.filter(id=request.user.id)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if request.user.rol == "anfitrion":
+            obj.id_anfitrion = request.user
+        super().save_model(request, obj, form, change)
 
 
 class UsuarioContextChoiceField(forms.ModelChoiceField):
@@ -104,7 +236,8 @@ class AgenteIATestForm(forms.Form):
 
 
 @admin.register(AgenteIAConfig)
-class AgenteIAConfigAdmin(admin.ModelAdmin):
+class AgenteIAConfigAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin",)
     list_display = (
         "nombre",
         "que_hace_resumen",
@@ -145,7 +278,7 @@ class AgenteIAConfigAdmin(admin.ModelAdmin):
     )
 
     def has_add_permission(self, request):
-        return not AgenteIAConfig.objects.exists()
+        return is_admin_role(request.user) and not AgenteIAConfig.objects.exists()
 
     def has_change_permission(self, request, obj=None):
         return False
@@ -187,7 +320,12 @@ class AgenteIAConfigAdmin(admin.ModelAdmin):
 
 
 @admin.register(PreguntarIA)
-class PreguntarIAAdmin(admin.ModelAdmin):
+class PreguntarIAAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "anfitrion", "huesped")
+    add_roles = ()
+    change_roles = ()
+    delete_roles = ()
+
     def has_add_permission(self, request):
         return False
 
@@ -279,31 +417,290 @@ class DisponibilidadReservaInline(admin.TabularInline):
         return obj.fecha_publicacion
 
 
+def guaranies(value):
+    return f"Gs. {int(value):,}".replace(",", ".")
+
+
+def property_amenities(propiedad):
+    amenities = [amenity.nombre for amenity in propiedad.amenities.all()]
+    return ", ".join(amenities) if amenities else "Sin amenities cargados"
+
+
+def property_rules(propiedad):
+    return (
+        f"Mascotas: {'si' if propiedad.permite_mascotas else 'no'}; "
+        f"Fumar: {'si' if propiedad.permite_fumar else 'no'}; "
+        f"Fiestas: {'si' if propiedad.permite_fiestas else 'no'}"
+    )
+
+
+class ReservaAdminForm(forms.ModelForm):
+    class Meta:
+        model = Reserva
+        fields = "__all__"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        propiedad = cleaned_data.get("id_propiedad")
+        start_date = cleaned_data.get("fecha_inicio")
+        end_date = cleaned_data.get("fecha_fin")
+        guests = cleaned_data.get("cantidad_huespedes") or 1
+
+        if not propiedad or not start_date or not end_date:
+            return cleaned_data
+
+        if start_date < timezone.localdate():
+            raise forms.ValidationError("No se puede reservar con fecha de entrada pasada.")
+
+        if guests > propiedad.capacidad_maxima_huespedes:
+            raise forms.ValidationError(
+                "La cantidad de huespedes supera la capacidad maxima de la propiedad."
+            )
+
+        overlapping_reservations = Reserva.objects.filter(
+            id_propiedad=propiedad,
+            estado__in=BLOCKING_RESERVATION_STATES,
+            fecha_inicio__lt=end_date,
+            fecha_fin__gt=start_date,
+        )
+        blocked_availability = Disponibilidad.objects.filter(
+            id_propiedad=propiedad,
+            estado__in=BLOCKING_AVAILABILITY_STATES,
+            fecha__gte=start_date,
+            fecha__lt=end_date,
+        )
+
+        if self.instance.pk:
+            overlapping_reservations = overlapping_reservations.exclude(pk=self.instance.pk)
+            blocked_availability = blocked_availability.filter(
+                Q(id_reserva__isnull=True) | ~Q(id_reserva=self.instance)
+            )
+
+        if overlapping_reservations.exists() or blocked_availability.exists():
+            raise forms.ValidationError("La propiedad no esta disponible para esas fechas.")
+
+        return cleaned_data
+
+
 @admin.register(Reserva)
-class ReservaAdmin(admin.ModelAdmin):
-    list_display = ("id", "id_propiedad", "id_huesped", "fecha_inicio", "fecha_fin", "estado", "precio_total")
+class ReservaAdmin(RoleAdminMixin, admin.ModelAdmin):
+    form = ReservaAdminForm
+    allowed_roles = ("admin", "anfitrion", "huesped")
+    add_roles = ("admin", "huesped")
+    change_roles = ("admin", "anfitrion", "huesped")
+    delete_roles = ("admin",)
+    list_display = ("id", "id_propiedad", "id_huesped", "fecha_inicio", "fecha_fin", "estado", "precio_total", "monto_reembolso")
     list_filter = ("estado", "fecha_inicio", "id_propiedad")
     search_fields = ("id_propiedad__titulo", "id_huesped__username")
+    readonly_fields = ("fecha_cancelacion", "cancelada_por", "monto_reembolso", "detalle_propiedad", "ver_propiedades")
     inlines = [DisponibilidadReservaInline]
+    actions = ["confirmar_reservas", "rechazar_reservas"]
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_role(request.user):
+            return queryset
+        if request.user.rol == "anfitrion":
+            return queryset.filter(id_propiedad__id_anfitrion=request.user)
+        if request.user.rol == "huesped":
+            return queryset.filter(id_huesped=request.user)
+        return queryset.none()
+
+    def get_fields(self, request, obj=None):
+        if request.user.rol == "huesped":
+            if obj:
+                return (
+                    "fecha_inicio",
+                    "fecha_fin",
+                    "cantidad_huespedes",
+                    "id_propiedad",
+                    "detalle_propiedad",
+                    "estado",
+                    "precio_total",
+                    "monto_reembolso",
+                )
+            return (
+                "fecha_inicio",
+                "fecha_fin",
+                "cantidad_huespedes",
+                "id_propiedad",
+                "ver_propiedades",
+            )
+        if request.user.rol == "anfitrion":
+            return ("estado",)
+        return super().get_fields(request, obj)
+
+    def get_readonly_fields(self, request, obj=None):
+        if request.user.rol == "anfitrion":
+            return ()
+        if request.user.rol == "huesped":
+            if obj and obj.estado == "pendiente":
+                return ("detalle_propiedad", "estado", "precio_total", "monto_reembolso")
+            if obj:
+                return (
+                    "fecha_inicio",
+                    "fecha_fin",
+                    "cantidad_huespedes",
+                    "id_propiedad",
+                    "detalle_propiedad",
+                    "estado",
+                    "precio_total",
+                    "monto_reembolso",
+                )
+            return ("ver_propiedades",)
+        return self.readonly_fields
+
+    def has_change_permission(self, request, obj=None):
+        if is_admin_role(request.user):
+            return True
+        if request.user.rol == "anfitrion" and obj is None:
+            return True
+        if request.user.rol == "anfitrion" and obj:
+            return obj.id_propiedad.id_anfitrion_id == request.user.id
+        if request.user.rol == "huesped" and obj is None:
+            return True
+        if request.user.rol == "huesped" and obj:
+            return obj.id_huesped_id == request.user.id and obj.estado == "pendiente"
+        return False
+
+    def can_manage_reserva(self, request, reserva):
+        if is_admin_role(request.user):
+            return True
+        return (
+            request.user.rol == "anfitrion"
+            and reserva.id_propiedad.id_anfitrion_id == request.user.id
+        )
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "id_huesped" and request.user.rol == "huesped":
+            kwargs["queryset"] = Usuario.objects.filter(id=request.user.id)
+        if db_field.name == "id_propiedad" and request.user.rol == "huesped":
+            kwargs["queryset"] = Propiedad.objects.filter(estado="disponible").order_by("titulo")
+        if db_field.name == "id_propiedad" and request.user.rol == "anfitrion":
+            kwargs["queryset"] = Propiedad.objects.filter(id_anfitrion=request.user)
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        return formfield
 
     def save_model(self, request, obj, form, change):
+        if request.user.rol == "huesped":
+            if change:
+                original = Reserva.objects.get(pk=obj.pk)
+                if original.estado != "pendiente":
+                    raise PermissionDenied("Solo podes modificar reservas pendientes.")
+                obj.id_huesped = original.id_huesped
+                obj.estado = original.estado
+            else:
+                obj.id_huesped = request.user
+                obj.estado = "pendiente"
+            obj.precio_total = calculate_price(obj.id_propiedad, obj.fecha_inicio, obj.fecha_fin)
         super().save_model(request, obj, form, change)
         sync_reservation_availability(obj)
 
+    @admin.display(description="Detalle de la propiedad")
+    def detalle_propiedad(self, obj):
+        if not obj or not obj.id_propiedad_id:
+            return "-"
+        propiedad = obj.id_propiedad
+        return self.property_detail_html(propiedad)
+
+    @admin.display(description="Propiedades disponibles")
+    def ver_propiedades(self, obj):
+        return format_html(
+            '<a class="button" href="/admin/presupuesto/propiedad/">Ver propiedades y detalles</a>'
+        )
+
+    def property_detail_html(self, propiedad):
+        return format_html(
+            "<strong>{}</strong><br>"
+            "Descripcion: {}<br>"
+            "Ubicacion: {} - {}<br>"
+            "Tipo: {} | Estado: {} | Capacidad: {} huesped(es)<br>"
+            "Precio noche: {} | Fin de semana: {} | Limpieza: {}<br>"
+            "Amenities: {}<br>"
+            "Reglas: {}<br>"
+            "Politica de cancelacion: {}",
+            propiedad.titulo,
+            propiedad.descripcion,
+            propiedad.ubicacion,
+            propiedad.calle or "Sin calle cargada",
+            propiedad.get_tipo_alojamiento_display(),
+            propiedad.get_estado_display(),
+            propiedad.capacidad_maxima_huespedes,
+            guaranies(propiedad.precio_noche),
+            guaranies(propiedad.precio_fin_semana),
+            guaranies(propiedad.tarifa_limpieza),
+            property_amenities(propiedad),
+            property_rules(propiedad),
+            propiedad.get_politica_cancelacion_display(),
+        )
+
+    @admin.action(description="Confirmar reservas seleccionadas")
+    def confirmar_reservas(self, request, queryset):
+        total = 0
+        for reserva in queryset.select_related("id_propiedad__id_anfitrion", "id_huesped"):
+            if (
+                reserva.estado == "pendiente"
+                and self.can_manage_reserva(request, reserva)
+            ):
+                update_reservation_status(reserva, "confirmada")
+                total += 1
+        self.message_user(request, f"Se confirmaron {total} reserva(s) pendiente(s).")
+
+    @admin.action(description="Rechazar reservas seleccionadas")
+    def rechazar_reservas(self, request, queryset):
+        total = 0
+        for reserva in queryset.select_related("id_propiedad__id_anfitrion", "id_huesped"):
+            if (
+                reserva.estado == "pendiente"
+                and self.can_manage_reserva(request, reserva)
+            ):
+                update_reservation_status(reserva, "rechazada")
+                total += 1
+        self.message_user(request, f"Se rechazaron {total} reserva(s) pendiente(s).")
+
 
 @admin.register(Review)
-class ReviewAdmin(admin.ModelAdmin):
+class ReviewAdmin(RoleAdminMixin, admin.ModelAdmin):
+    allowed_roles = ("admin", "anfitrion", "huesped")
+    add_roles = ("huesped",)
+    change_roles = ()
+    delete_roles = ()
     list_display = ("id", "id_propiedad", "id_usuario", "calificacion", "fecha")
     list_filter = ("calificacion", "fecha", "id_propiedad")
     search_fields = ("comentario", "id_propiedad__titulo", "id_usuario__username")
-    readonly_fields = ("calificacion", "comentario", "fecha", "id_usuario", "id_propiedad", "id_reserva")
-    fields = ("calificacion", "comentario", "fecha", "id_usuario", "id_propiedad", "id_reserva")
+    readonly_fields = ("fecha", "id_usuario", "id_propiedad")
 
     def has_add_permission(self, request):
-        return False
+        return request.user.is_active and getattr(request.user, "rol", None) == "huesped"
 
     def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    def get_fields(self, request, obj=None):
+        if request.user.rol == "huesped":
+            return ("calificacion", "comentario", "id_reserva")
+        return ("calificacion", "comentario", "fecha", "id_usuario", "id_propiedad", "id_reserva")
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        if is_admin_role(request.user):
+            return queryset
+        if request.user.rol == "anfitrion":
+            return queryset.filter(id_propiedad__id_anfitrion=request.user)
+        if request.user.rol == "huesped":
+            return queryset.filter(id_usuario=request.user)
+        return queryset.none()
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "id_reserva" and request.user.rol == "huesped":
+            kwargs["queryset"] = Reserva.objects.filter(id_huesped=request.user)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if request.user.rol == "huesped":
+            obj.id_usuario = request.user
+            obj.id_propiedad = obj.id_reserva.id_propiedad
+        super().save_model(request, obj, form, change)

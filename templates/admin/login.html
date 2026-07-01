@@ -1,0 +1,63 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block title %}Acceso al sistema{% endblock %}
+{% block bodyclass %}{{ block.super }} login{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    body.login #container {
+        width: 390px;
+        margin: 33px auto;
+        border: 1px solid var(--hairline-color);
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--body-bg);
+    }
+    body.login #content {
+        padding: 20px;
+    }
+    body.login .form-row {
+        padding: 4px 0;
+    }
+    body.login .form-row label {
+        display: block;
+        margin-bottom: 6px;
+    }
+    body.login .form-row input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+    body.login .submit-row {
+        text-align: center;
+        padding: 14px 0 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if form.errors %}
+<p class="errornote">Usuario o clave incorrectos.</p>
+{% endif %}
+
+<div id="content-main">
+    <form action="{{ app_path }}" method="post" id="login-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="form-row">
+            <label for="id_username">Nombre de usuario:</label>
+            <input type="text" name="username" autofocus autocapitalize="none" autocomplete="username" maxlength="150" required id="id_username">
+        </div>
+        <div class="form-row">
+            <label for="id_password">Contraseña:</label>
+            <input type="password" name="password" autocomplete="current-password" required id="id_password">
+        </div>
+        <div class="submit-row">
+            <input type="submit" value="Iniciar sesión">
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,6 +1,7 @@
 import unicodedata
 
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -15,6 +16,11 @@ class Usuario(AbstractUser):
     rol = models.CharField(max_length=20, choices=ROL_CHOICES, default="huesped")
     telefono = models.CharField(max_length=20, blank=True, null=True)
     fecha_registro = models.DateTimeField(default=timezone.now)
+
+    def save(self, *args, **kwargs):
+        if self.rol in ["admin", "anfitrion", "huesped"]:
+            self.is_staff = True
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.username
@@ -47,15 +53,39 @@ class Propiedad(models.Model):
         ("pausada", "Pausada"),
         ("inactiva", "Inactiva"),
     ]
+    TIPO_ALOJAMIENTO_CHOICES = [
+        ("casa_entera", "Casa entera"),
+        ("habitacion_privada", "Habitacion privada"),
+        ("habitacion_compartida", "Habitacion compartida"),
+    ]
+    POLITICA_CANCELACION_CHOICES = [
+        ("flexible", "Flexible"),
+        ("moderada", "Moderada"),
+        ("estricta", "Estricta"),
+    ]
 
     titulo = models.CharField(max_length=200)
     descripcion = models.TextField()
     calle = models.CharField(max_length=255, blank=True, default="")
     ubicacion = models.CharField(max_length=255, help_text="Ciudad donde se encuentra la propiedad.")
+    tipo_alojamiento = models.CharField(
+        max_length=30,
+        choices=TIPO_ALOJAMIENTO_CHOICES,
+        default="casa_entera",
+    )
+    capacidad_maxima_huespedes = models.PositiveIntegerField(default=1)
     precio_noche = models.DecimalField("Precio noche (Gs.)", max_digits=12, decimal_places=0)
     precio_fin_semana = models.DecimalField("Precio fin de semana (Gs.)", max_digits=12, decimal_places=0)
     tarifa_limpieza = models.DecimalField("Tarifa limpieza (Gs.)", max_digits=12, decimal_places=0)
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="disponible")
+    permite_mascotas = models.BooleanField(default=False)
+    permite_fumar = models.BooleanField(default=False)
+    permite_fiestas = models.BooleanField(default=False)
+    politica_cancelacion = models.CharField(
+        max_length=20,
+        choices=POLITICA_CANCELACION_CHOICES,
+        default="moderada",
+    )
     id_anfitrion = models.ForeignKey(
         Usuario,
         on_delete=models.CASCADE,
@@ -76,10 +106,32 @@ class Propiedad(models.Model):
         return self.titulo
 
 
+class PropiedadFoto(models.Model):
+    propiedad = models.ForeignKey(
+        Propiedad,
+        on_delete=models.CASCADE,
+        related_name="fotos",
+    )
+    foto = models.FileField(upload_to="propiedades/fotos/")
+    descripcion = models.CharField(max_length=150, blank=True, default="")
+    es_portada = models.BooleanField(default=False)
+    fecha_publicacion = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Foto de propiedad"
+        verbose_name_plural = "Fotos de propiedades"
+        ordering = ["-es_portada", "id"]
+
+    def __str__(self):
+        return f"Foto de {self.propiedad}"
+
+
 class Reserva(models.Model):
     ESTADO_CHOICES = [
         ("pendiente", "Pendiente"),
         ("confirmada", "Confirmada"),
+        ("activa", "Activa"),
+        ("completada", "Completada"),
         ("cancelada", "Cancelada"),
         ("rechazada", "Rechazada"),
     ]
@@ -89,6 +141,16 @@ class Reserva(models.Model):
     cantidad_huespedes = models.IntegerField()
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default="pendiente")
     precio_total = models.DecimalField("Precio total (Gs.)", max_digits=12, decimal_places=0)
+    fecha_cancelacion = models.DateTimeField(blank=True, null=True)
+    cancelada_por = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        related_name="reservas_canceladas",
+        blank=True,
+        null=True,
+    )
+    motivo_cancelacion = models.CharField(max_length=255, blank=True, default="")
+    monto_reembolso = models.DecimalField("Reembolso simulado (Gs.)", max_digits=12, decimal_places=0, default=0)
     id_huesped = models.ForeignKey(
         Usuario,
         on_delete=models.CASCADE,
@@ -104,6 +166,16 @@ class Reserva(models.Model):
     class Meta:
         verbose_name = "Reserva"
         verbose_name_plural = "Reservas"
+
+    def clean(self):
+        if self.fecha_inicio and self.fecha_fin and self.fecha_fin <= self.fecha_inicio:
+            raise ValidationError({
+                "fecha_fin": "La fecha de salida debe ser posterior a la fecha de entrada."
+            })
+        if not self.pk and self.fecha_inicio and self.fecha_inicio < timezone.localdate():
+            raise ValidationError({
+                "fecha_inicio": "No se puede reservar con fecha de entrada pasada."
+            })
 
     def __str__(self):
         return f"{self.id_propiedad} ({self.fecha_inicio} - {self.fecha_fin})"
@@ -184,6 +256,31 @@ class Notificacion(models.Model):
     class Meta:
         verbose_name = "Notificacion"
         verbose_name_plural = "Notificaciones"
+
+
+class HistorialPropiedadVisitada(models.Model):
+    id_usuario = models.ForeignKey(
+        Usuario,
+        on_delete=models.CASCADE,
+        related_name="historial_propiedades",
+        limit_choices_to={"rol": "huesped"},
+    )
+    id_propiedad = models.ForeignKey(
+        Propiedad,
+        on_delete=models.CASCADE,
+        related_name="visitas",
+    )
+    fecha_visita = models.DateTimeField(default=timezone.now)
+    cantidad_visitas = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        verbose_name = "Historial de propiedad visitada"
+        verbose_name_plural = "Historial de propiedades visitadas"
+        unique_together = ("id_usuario", "id_propiedad")
+        ordering = ["-fecha_visita"]
+
+    def __str__(self):
+        return f"{self.id_usuario} visito {self.id_propiedad}"
 
 
 class Review(models.Model):
