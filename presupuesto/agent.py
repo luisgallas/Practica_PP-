@@ -164,19 +164,25 @@ def wants_to_create_reservation(normalized):
 
 def property_payload(propiedad):
     amenities = [amenity.nombre for amenity in propiedad.amenities.all()]
-    accepts_pets = any("mascota" in normalize(name) for name in amenities)
     return {
         "id": propiedad.id,
         "titulo": propiedad.titulo,
         "descripcion": propiedad.descripcion,
         "calle": propiedad.calle,
         "ubicacion": propiedad.ubicacion,
+        "tipo_alojamiento": propiedad.tipo_alojamiento,
+        "capacidad_maxima_huespedes": propiedad.capacidad_maxima_huespedes,
         "precio_noche": str(propiedad.precio_noche),
         "precio_fin_semana": str(propiedad.precio_fin_semana),
         "tarifa_limpieza": str(propiedad.tarifa_limpieza),
         "estado": propiedad.estado,
         "amenities": amenities,
-        "acepta_mascotas": accepts_pets,
+        "reglas_casa": {
+            "permite_mascotas": propiedad.permite_mascotas,
+            "permite_fumar": propiedad.permite_fumar,
+            "permite_fiestas": propiedad.permite_fiestas,
+        },
+        "politica_cancelacion": propiedad.politica_cancelacion,
     }
 
 
@@ -226,6 +232,11 @@ def handle_availability(message):
             "reply": "La fecha de salida debe ser posterior a la fecha de entrada.",
             "intent": "availability_invalid_dates",
         }
+    if start_date < timezone.localdate():
+        return {
+            "reply": "No se puede consultar ni reservar con fecha de entrada pasada.",
+            "intent": "availability_invalid_dates",
+        }
 
     guests = parse_guests(message)
     available = get_available_properties(start_date, end_date, guests=guests)
@@ -258,9 +269,16 @@ def handle_property_info(message):
 
     payload = property_payload(propiedad)
     amenities = ", ".join(payload["amenities"]) if payload["amenities"] else "sin amenities cargados"
-    pets = "si" if payload["acepta_mascotas"] else "no figura como permitido"
+    pets = "si" if payload["reglas_casa"]["permite_mascotas"] else "no"
+    smoking = "si" if payload["reglas_casa"]["permite_fumar"] else "no"
+    parties = "si" if payload["reglas_casa"]["permite_fiestas"] else "no"
     return {
-        "reply": f"{propiedad.titulo} tiene: {amenities}. Mascotas: {pets}.",
+        "reply": (
+            f"{propiedad.titulo} tiene: {amenities}. Tipo: {propiedad.get_tipo_alojamiento_display()}. "
+            f"Capacidad maxima: {propiedad.capacidad_maxima_huespedes} huesped(es). "
+            f"Mascotas: {pets}. Fumar: {smoking}. Fiestas: {parties}. "
+            f"Politica de cancelacion: {propiedad.get_politica_cancelacion_display()}."
+        ),
         "intent": "property_info",
         "data": payload,
     }
@@ -313,6 +331,16 @@ def handle_create_reservation(message, user_id):
             "reply": "Para preparar la reserva necesito fecha de entrada y salida.",
             "intent": "reservation_missing_dates",
         }
+    if end_date <= start_date:
+        return {
+            "reply": "La fecha de salida debe ser posterior a la fecha de entrada.",
+            "intent": "reservation_invalid_dates",
+        }
+    if start_date < timezone.localdate():
+        return {
+            "reply": "No se puede reservar con fecha de entrada pasada.",
+            "intent": "reservation_invalid_dates",
+        }
 
     property_text = extract_property_text(message)
     propiedad = find_property_by_text(property_text)
@@ -358,6 +386,30 @@ def handle_create_reservation(message, user_id):
     }
 
 
+def format_reservation_summary(reserva):
+    return (
+        f"- #{reserva.id}: {reserva.id_propiedad.titulo}, huesped {reserva.id_huesped.username}, "
+        f"del {reserva.fecha_inicio} al {reserva.fecha_fin}, "
+        f"{reserva.cantidad_huespedes} huesped(es), estado {reserva.estado}, "
+        f"total Gs. {int(reserva.precio_total):,}"
+    ).replace(",", ".")
+
+
+def asks_for_reservation_details(normalized):
+    detail_words = [
+        "cuales",
+        "cual son",
+        "listame",
+        "lista",
+        "mostrar",
+        "mostrame",
+        "detalle",
+        "detalles",
+        "ver reservas",
+    ]
+    return any(word in normalized for word in detail_words)
+
+
 def handle_host_summary(message, user_id):
     normalized = normalize(message)
     today = timezone.localdate()
@@ -401,6 +453,13 @@ def handle_host_summary(message, user_id):
     serialized = ReservaSerializer(reservations[:10], many=True).data
     if status == "pendiente" and count == 0:
         reply = "No tenes reservas pendientes de confirmar."
+    elif asks_for_reservation_details(normalized):
+        details = "\n".join(format_reservation_summary(reserva) for reserva in reservations[:10])
+        if count > 10:
+            details += f"\n- Y {count - 10} reserva(s) mas."
+        scope_text = " en todo el sistema" if scope == "admin" else ""
+        status_text = f" en estado {status}" if status else ""
+        reply = f"Estas son las {count} reserva(s){status_text}{scope_text}:\n{details}"
     else:
         scope_text = " en todo el sistema" if scope == "admin" else ""
         reply = f"Encontre {count} reserva(s){scope_text}" + (f" en estado {status}" if status else "") + "."
@@ -433,7 +492,7 @@ def chat(payload):
     if any(word in normalized for word in ["amenities", "amenity", "mascota", "propiedad", "quinta"]):
         return handle_property_info(message)
 
-    if any(word in normalized for word in ["anfitrion", "pendiente", "confirmar", "cuantas reservas", "cuantos reservas", "reservas tuve"]):
+    if any(word in normalized for word in ["anfitrion", "pendiente", "confirmar", "cuantas reservas", "cuantos reservas", "reservas tuve", "reservas pendientes", "cuales son"]):
         return handle_host_summary(message, user_id)
 
     return {"reply": OUT_OF_SCOPE_REPLY, "intent": "fallback"}

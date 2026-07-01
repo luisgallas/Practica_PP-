@@ -2,11 +2,12 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Q
+from django.utils import timezone
 
-from .models import Disponibilidad, Propiedad, Reserva, Usuario
+from .models import Disponibilidad, HistorialPropiedadVisitada, Notificacion, Propiedad, Reserva, Usuario
 
 
-BLOCKING_RESERVATION_STATES = ["pendiente", "confirmada"]
+BLOCKING_RESERVATION_STATES = ["pendiente", "confirmada", "activa"]
 BLOCKING_AVAILABILITY_STATES = ["bloqueada", "reservada"]
 
 
@@ -53,6 +54,10 @@ def is_property_available(propiedad, start_date, end_date):
     return not blocked_dates(propiedad, start_date, end_date).exists()
 
 
+def has_guest_capacity(propiedad, guests):
+    return int(guests or 1) <= propiedad.capacidad_maxima_huespedes
+
+
 def release_reserved_dates(reserva):
     reserva.disponibilidades.update(
         estado="disponible",
@@ -90,28 +95,44 @@ def sync_reservation_availability(reserva):
         release_reserved_dates(reserva)
 
 
+def create_notification(user, message, reserva=None):
+    return Notificacion.objects.create(
+        id_usuario=user,
+        id_reserva=reserva,
+        mensaje=message,
+    )
+
+
+def notify_reservation_change(reserva, message):
+    create_notification(reserva.id_huesped, message, reserva)
+    create_notification(reserva.id_propiedad.id_anfitrion, message, reserva)
+
+
 def get_available_properties(start_date, end_date, guests=None, property_id=None):
     queryset = Propiedad.objects.filter(estado="disponible").prefetch_related("amenities")
     if property_id:
         queryset = queryset.filter(id=property_id)
 
     available = []
+    guests = int(guests or 1)
     for propiedad in queryset:
-        if is_property_available(propiedad, start_date, end_date):
+        if is_property_available(propiedad, start_date, end_date) and has_guest_capacity(propiedad, guests):
             available.append(
                 {
                     "id": propiedad.id,
                     "titulo": propiedad.titulo,
                     "calle": propiedad.calle,
                     "ubicacion": propiedad.ubicacion,
+                    "tipo_alojamiento": propiedad.tipo_alojamiento,
+                    "capacidad_maxima_huespedes": propiedad.capacidad_maxima_huespedes,
                     "precio_total": str(calculate_price(propiedad, start_date, end_date)),
                     "amenities": [amenity.nombre for amenity in propiedad.amenities.all()],
-                    "nota_huespedes": (
-                        "El sistema no registra capacidad maxima por propiedad; "
-                        f"se informo la busqueda para {guests} huesped(es)."
-                        if guests
-                        else "El sistema no registra capacidad maxima por propiedad."
-                    ),
+                    "reglas_casa": {
+                        "permite_mascotas": propiedad.permite_mascotas,
+                        "permite_fumar": propiedad.permite_fumar,
+                        "permite_fiestas": propiedad.permite_fiestas,
+                    },
+                    "politica_cancelacion": propiedad.politica_cancelacion,
                 }
             )
     return available
@@ -120,6 +141,21 @@ def get_available_properties(start_date, end_date, guests=None, property_id=None
 def create_reservation(propiedad_id, huesped_id, start_date, end_date, guests):
     propiedad = Propiedad.objects.get(id=propiedad_id)
     huesped = Usuario.objects.get(id=huesped_id, rol="huesped")
+    guests = int(guests or 1)
+
+    if start_date < timezone.localdate():
+        raise ValueError("No se puede reservar con fecha de entrada pasada.")
+
+    if end_date <= start_date:
+        raise ValueError("La fecha de salida debe ser posterior a la fecha de entrada.")
+
+    if guests < 1:
+        raise ValueError("La reserva debe tener al menos un huesped.")
+
+    if not has_guest_capacity(propiedad, guests):
+        raise ValueError(
+            "La cantidad de huespedes supera la capacidad maxima de la propiedad."
+        )
 
     if not is_property_available(propiedad, start_date, end_date):
         raise ValueError("La propiedad no esta disponible para esas fechas.")
@@ -134,7 +170,79 @@ def create_reservation(propiedad_id, huesped_id, start_date, end_date, guests):
         precio_total=calculate_price(propiedad, start_date, end_date),
     )
     sync_reservation_availability(reserva)
+    notify_reservation_change(
+        reserva,
+        f"Reserva #{reserva.id} creada en estado pendiente para {propiedad.titulo}.",
+    )
     return reserva
+
+
+def calculate_refund(reserva, today=None):
+    today = today or timezone.localdate()
+    days_before = (reserva.fecha_inicio - today).days
+    policy = reserva.id_propiedad.politica_cancelacion
+
+    if policy == "flexible":
+        percent = Decimal("1.00") if days_before >= 1 else Decimal("0.50")
+    elif policy == "moderada":
+        if days_before >= 5:
+            percent = Decimal("1.00")
+        elif days_before >= 1:
+            percent = Decimal("0.50")
+        else:
+            percent = Decimal("0.00")
+    else:
+        percent = Decimal("0.50") if days_before >= 7 else Decimal("0.00")
+
+    return (reserva.precio_total * percent).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def cancel_reservation(reserva, cancelled_by=None, reason=""):
+    if reserva.estado in ["cancelada", "completada"]:
+        raise ValueError("La reserva no se puede cancelar en su estado actual.")
+
+    reserva.estado = "cancelada"
+    reserva.fecha_cancelacion = timezone.now()
+    reserva.cancelada_por = cancelled_by
+    reserva.motivo_cancelacion = reason or "Cancelacion solicitada desde el sistema."
+    reserva.monto_reembolso = calculate_refund(reserva)
+    reserva.save()
+    sync_reservation_availability(reserva)
+    notify_reservation_change(
+        reserva,
+        (
+            f"Reserva #{reserva.id} cancelada. Reembolso simulado: "
+            f"Gs. {int(reserva.monto_reembolso):,}."
+        ).replace(",", "."),
+    )
+    return reserva
+
+
+def update_reservation_status(reserva, new_status):
+    if new_status not in dict(Reserva.ESTADO_CHOICES):
+        raise ValueError("Estado de reserva invalido.")
+    if reserva.estado == "cancelada":
+        raise ValueError("No se puede cambiar una reserva cancelada.")
+
+    reserva.estado = new_status
+    reserva.save()
+    sync_reservation_availability(reserva)
+    notify_reservation_change(reserva, f"Reserva #{reserva.id} cambio a estado {reserva.get_estado_display()}.")
+    return reserva
+
+
+def record_property_visit(user, propiedad):
+    if not user.is_authenticated or user.rol != "huesped":
+        return None
+    history, created = HistorialPropiedadVisitada.objects.get_or_create(
+        id_usuario=user,
+        id_propiedad=propiedad,
+    )
+    if not created:
+        history.cantidad_visitas += 1
+        history.fecha_visita = timezone.now()
+        history.save(update_fields=["cantidad_visitas", "fecha_visita"])
+    return history
 
 
 def host_reservations(host_id=None, status=None, month=None):

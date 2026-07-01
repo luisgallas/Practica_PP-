@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Amenity, Disponibilidad, Propiedad, Reserva, Review, Usuario
+from .models import Amenity, Disponibilidad, HistorialPropiedadVisitada, Notificacion, Propiedad, PropiedadFoto, Reserva, Review, Usuario
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
@@ -15,9 +15,26 @@ class AmenitySerializer(serializers.ModelSerializer):
         fields = ["id", "nombre"]
 
 
+class PropiedadFotoSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PropiedadFoto
+        fields = ["id", "foto", "url", "descripcion", "es_portada", "fecha_publicacion"]
+
+    def get_url(self, obj):
+        request = self.context.get("request")
+        if not obj.foto:
+            return ""
+        if request:
+            return request.build_absolute_uri(obj.foto.url)
+        return obj.foto.url
+
+
 class PropiedadSerializer(serializers.ModelSerializer):
     anfitrion = UsuarioSerializer(source="id_anfitrion", read_only=True)
     amenities = AmenitySerializer(many=True, read_only=True)
+    fotos = PropiedadFotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Propiedad
@@ -27,12 +44,19 @@ class PropiedadSerializer(serializers.ModelSerializer):
             "descripcion",
             "calle",
             "ubicacion",
+            "tipo_alojamiento",
+            "capacidad_maxima_huespedes",
             "precio_noche",
             "precio_fin_semana",
             "tarifa_limpieza",
             "estado",
+            "permite_mascotas",
+            "permite_fumar",
+            "permite_fiestas",
+            "politica_cancelacion",
             "anfitrion",
             "amenities",
+            "fotos",
         ]
 
 
@@ -58,13 +82,16 @@ class ReservaSerializer(serializers.ModelSerializer):
             "cantidad_huespedes",
             "estado",
             "precio_total",
+            "fecha_cancelacion",
+            "motivo_cancelacion",
+            "monto_reembolso",
             "id_propiedad",
             "id_huesped",
             "propiedad",
             "huesped",
             "disponibilidades",
         ]
-        read_only_fields = ["precio_total"]
+        read_only_fields = ["precio_total", "fecha_cancelacion", "motivo_cancelacion", "monto_reembolso"]
 
     def get_disponibilidades(self, obj):
         return [
@@ -94,3 +121,17 @@ class ReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Review
         fields = ["id", "calificacion", "comentario", "fecha", "usuario", "propiedad", "id_reserva"]
+
+
+class NotificacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notificacion
+        fields = ["id", "mensaje", "estado", "fecha", "id_reserva"]
+
+
+class HistorialPropiedadVisitadaSerializer(serializers.ModelSerializer):
+    propiedad = PropiedadSerializer(source="id_propiedad", read_only=True)
+
+    class Meta:
+        model = HistorialPropiedadVisitada
+        fields = ["id", "fecha_visita", "cantidad_visitas", "propiedad"]

@@ -26,15 +26,31 @@ class Command(BaseCommand):
 
         host, _ = Usuario.objects.get_or_create(
             username="anfitrion1",
-            defaults={"first_name": "Juan", "last_name": "Perez", "email": "anfitrion@test.com", "rol": "anfitrion"},
+            defaults={
+                "first_name": "Juan",
+                "last_name": "Perez",
+                "email": "anfitrion@test.com",
+                "rol": "anfitrion",
+                "is_staff": True,
+            },
         )
+        host.rol = "anfitrion"
+        host.is_staff = True
         host.set_password("test123")
         host.save()
 
         guest, _ = Usuario.objects.get_or_create(
             username="huesped1",
-            defaults={"first_name": "Huesped", "last_name": "Demo", "email": "huesped@test.com", "rol": "huesped"},
+            defaults={
+                "first_name": "Huesped",
+                "last_name": "Demo",
+                "email": "huesped@test.com",
+                "rol": "huesped",
+                "is_staff": True,
+            },
         )
+        guest.rol = "huesped"
+        guest.is_staff = True
         guest.set_password("test123")
         guest.save()
 
@@ -68,24 +84,45 @@ class Command(BaseCommand):
         amenities = {name: Amenity.objects.get_or_create(nombre=name)[0] for name in amenity_names}
 
         property_specs = [
-            ("Casa cerca del centro", "Hermosa casa con vistas al centro de la ciudad", "Calle Principal 123", "Villarrica", 150, 200, 50, ["WIFI", "PISCINA", "COCINA COMPLETA"]),
-            ("Departamento moderno", "Depto moderno en zona residencial", "Avenida Independencia 456", "Asuncion", 100, 150, 30, ["TV SMART", "LAVADORA", "ESTACIONAMIENTO", "JARDIN"]),
-            ("Cabana en la montana", "Cabana tranquila rodeada de naturaleza", "Camino Rural 789", "Caacupe", 80, 120, 40, ["PISCINA", "COCINA COMPLETA", "TV SMART"]),
-            ("Quinta Guaira", "Quinta de descanso para familias y grupos chicos", "Ruta 8 km 4", "Villarrica", 50000, 80000, 30000, ["WIFI", "PISCINA", "ESTACIONAMIENTO"]),
+            ("Casa cerca del centro", "Hermosa casa con vistas al centro de la ciudad", "Calle Principal 123", "Villarrica", "casa_entera", 6, True, False, False, "flexible", 150, 200, 50, ["WIFI", "PISCINA", "COCINA COMPLETA"]),
+            ("Departamento moderno", "Depto moderno en zona residencial", "Avenida Independencia 456", "Asuncion", "habitacion_privada", 2, False, False, False, "moderada", 100, 150, 30, ["TV SMART", "LAVADORA", "ESTACIONAMIENTO", "JARDIN"]),
+            ("Cabana en la montana", "Cabana tranquila rodeada de naturaleza", "Camino Rural 789", "Caacupe", "casa_entera", 4, True, False, False, "estricta", 80, 120, 40, ["PISCINA", "COCINA COMPLETA", "TV SMART"]),
+            ("Quinta Guaira", "Quinta de descanso para familias y grupos chicos", "Ruta 8 km 4", "Villarrica", "casa_entera", 8, False, False, True, "moderada", 50000, 80000, 30000, ["WIFI", "PISCINA", "ESTACIONAMIENTO"]),
         ]
 
         properties = []
-        for title, description, street, city, week_price, weekend_price, cleaning_fee, names in property_specs:
+        for (
+            title,
+            description,
+            street,
+            city,
+            property_type,
+            guest_capacity,
+            allows_pets,
+            allows_smoking,
+            allows_parties,
+            cancellation_policy,
+            week_price,
+            weekend_price,
+            cleaning_fee,
+            names,
+        ) in property_specs:
             prop, _ = Propiedad.objects.update_or_create(
                 titulo=title,
                 defaults={
                     "descripcion": description,
                     "calle": street,
                     "ubicacion": city,
+                    "tipo_alojamiento": property_type,
+                    "capacidad_maxima_huespedes": guest_capacity,
                     "precio_noche": Decimal(str(week_price)),
                     "precio_fin_semana": Decimal(str(weekend_price)),
                     "tarifa_limpieza": Decimal(str(cleaning_fee)),
                     "estado": "disponible",
+                    "permite_mascotas": allows_pets,
+                    "permite_fumar": allows_smoking,
+                    "permite_fiestas": allows_parties,
+                    "politica_cancelacion": cancellation_policy,
                     "id_anfitrion": host,
                 },
             )
