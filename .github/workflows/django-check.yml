@@ -6,34 +6,46 @@ on:
   pull_request:
     branches: [ main, master, develop ]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     
     strategy:
       matrix:
-        python-version: ['3.9', '3.10']
+        python-version: ['3.12']
     
     services:
       postgres:
-        image: postgres:13
+        image: postgres:16
         env:
           POSTGRES_DB: practica_pp_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
         ports:
           - 5432:5432
 
+    env:
+      DB_ENGINE: django.db.backends.postgresql
+      DB_NAME: practica_pp_test
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: localhost
+      SECRET_KEY: clave-exclusiva-de-pruebas-ci-sin-acceso-a-datos-reales-2026
+      DEBUG: 'True'
+
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
     
@@ -42,25 +54,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
     
-    - name: Create .env file
-      run: |
-        cp .env.example .env
-        sed -i 's/DB_NAME=practica_pp/DB_NAME=practica_pp_test/' .env
-        sed -i 's/DB_USER=postgres/DB_USER=postgres/' .env
-        sed -i 's/DB_PASSWORD=your_password/DB_PASSWORD=postgres/' .env
-    
     - name: Run Django check
       run: |
         python manage.py check
     
     - name: Run migrations
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/practica_pp_test
       run: |
         python manage.py migrate
     
     - name: Run tests
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/practica_pp_test
       run: |
-        python manage.py test
+        python manage.py test --noinput

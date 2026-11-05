@@ -1,7 +1,8 @@
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
+from django.db import transaction
 
-from django.db.models import Q
+from django.db.models import Q, Exists, OuterRef
 from django.utils import timezone
 
 from .models import Disponibilidad, HistorialPropiedadVisitada, Notificacion, Propiedad, Reserva, Usuario
@@ -109,14 +110,19 @@ def notify_reservation_change(reserva, message):
 
 
 def get_available_properties(start_date, end_date, guests=None, property_id=None):
-    queryset = Propiedad.objects.filter(estado="disponible").prefetch_related("amenities")
+    guests = int(guests or 1)
+    if guests < 1 or (end_date - start_date).days not in range(1, 366):
+        raise ValueError('Revisá la cantidad de huéspedes y las fechas de estadía.')
+    ocupadas = Reserva.objects.filter(id_propiedad_id=OuterRef('pk'), estado__in=BLOCKING_RESERVATION_STATES, fecha_inicio__lt=end_date, fecha_fin__gt=start_date)
+    bloqueadas = Disponibilidad.objects.filter(id_propiedad_id=OuterRef('pk'), estado__in=BLOCKING_AVAILABILITY_STATES, fecha__gte=start_date, fecha__lt=end_date)
+    queryset = Propiedad.objects.filter(estado="disponible", capacidad_maxima_huespedes__gte=guests).filter(~Exists(ocupadas), ~Exists(bloqueadas)).prefetch_related("amenities")
     if property_id:
         queryset = queryset.filter(id=property_id)
 
     available = []
     guests = int(guests or 1)
     for propiedad in queryset:
-        if is_property_available(propiedad, start_date, end_date) and has_guest_capacity(propiedad, guests):
+        if has_guest_capacity(propiedad, guests):
             available.append(
                 {
                     "id": propiedad.id,
@@ -138,8 +144,9 @@ def get_available_properties(start_date, end_date, guests=None, property_id=None
     return available
 
 
+@transaction.atomic
 def create_reservation(propiedad_id, huesped_id, start_date, end_date, guests):
-    propiedad = Propiedad.objects.get(id=propiedad_id)
+    propiedad = Propiedad.objects.select_for_update().get(id=propiedad_id)
     huesped = Usuario.objects.get(id=huesped_id, rol="huesped")
     guests = int(guests or 1)
 
@@ -148,6 +155,8 @@ def create_reservation(propiedad_id, huesped_id, start_date, end_date, guests):
 
     if end_date <= start_date:
         raise ValueError("La fecha de salida debe ser posterior a la fecha de entrada.")
+    if (end_date - start_date).days > 365:
+        raise ValueError('La estadía no puede superar 365 noches.')
 
     if guests < 1:
         raise ValueError("La reserva debe tener al menos un huesped.")
@@ -197,8 +206,11 @@ def calculate_refund(reserva, today=None):
     return (reserva.precio_total * percent).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
+@transaction.atomic
 def cancel_reservation(reserva, cancelled_by=None, reason=""):
-    if reserva.estado in ["cancelada", "completada"]:
+    Propiedad.objects.select_for_update().get(pk=reserva.id_propiedad_id)
+    reserva = Reserva.objects.select_for_update().get(pk=reserva.pk)
+    if reserva.estado not in ["pendiente", "confirmada"]:
         raise ValueError("La reserva no se puede cancelar en su estado actual.")
 
     reserva.estado = "cancelada"
@@ -218,11 +230,21 @@ def cancel_reservation(reserva, cancelled_by=None, reason=""):
     return reserva
 
 
+@transaction.atomic
 def update_reservation_status(reserva, new_status):
+    Propiedad.objects.select_for_update().get(pk=reserva.id_propiedad_id)
+    reserva = Reserva.objects.select_for_update().get(pk=reserva.pk)
     if new_status not in dict(Reserva.ESTADO_CHOICES):
         raise ValueError("Estado de reserva invalido.")
     if reserva.estado == "cancelada":
         raise ValueError("No se puede cambiar una reserva cancelada.")
+    transiciones = {'pendiente': ['confirmada', 'rechazada'], 'confirmada': ['activa'], 'activa': ['completada']}
+    if new_status not in transiciones.get(reserva.estado, []):
+        raise ValueError('Ese cambio de estado no está permitido.')
+    if new_status == 'activa' and timezone.localdate() < reserva.fecha_inicio:
+        raise ValueError('La estadía todavía no comenzó.')
+    if new_status == 'completada' and timezone.localdate() < reserva.fecha_fin:
+        raise ValueError('La estadía todavía no terminó.')
 
     reserva.estado = new_status
     reserva.save()

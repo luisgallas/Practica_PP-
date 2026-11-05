@@ -7,7 +7,7 @@ from presupuesto.agent import SYSTEM_PROMPT
 from presupuesto.models import AgenteIAConfig, Amenity, Disponibilidad, Propiedad, Reserva, Review, Usuario
 from presupuesto.services import sync_reservation_availability
 
-
+#es un comando personalizado de djando para cargar datos de prueba en la base de datos 
 class Command(BaseCommand):
     help = "Carga datos de ejemplo para probar el booking y el agente."
 
@@ -53,7 +53,7 @@ class Command(BaseCommand):
         guest.is_staff = True
         guest.set_password("test123")
         guest.save()
-
+               #carga la configuracion del agente de IA para el proyecto
         AgenteIAConfig.objects.update_or_create(
             nombre="Agente IA de Booking",
             defaults={
@@ -70,7 +70,7 @@ class Command(BaseCommand):
                 "activo": True,
             },
         )
-
+               #crea amenities de ejemplo y propiedades con datos de prueba
         amenity_names = [
             "WIFI",
             "PISCINA",
@@ -168,3 +168,4 @@ class Command(BaseCommand):
             sync_reservation_availability(reserva)
 
         self.stdout.write(self.style.SUCCESS("Datos de ejemplo cargados correctamente."))
+

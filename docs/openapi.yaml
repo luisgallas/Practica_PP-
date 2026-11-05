@@ -1,0 +1,1737 @@
+openapi: 3.0.3
+info:
+  title: Hospeda PY API
+  version: 2.0.0
+paths:
+  /api/v1/alojamientos/:
+    get:
+      operationId: alojamientos_list
+      parameters:
+      - in: query
+        name: ciudad
+        schema:
+          type: string
+      - in: query
+        name: desde
+        schema:
+          type: string
+      - in: query
+        name: hasta
+        schema:
+          type: string
+      - in: query
+        name: huespedes
+        schema:
+          type: string
+      - in: query
+        name: mios
+        schema:
+          type: string
+      - in: query
+        name: orden
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - in: query
+        name: precio_max
+        schema:
+          type: string
+      - in: query
+        name: puntaje
+        schema:
+          type: string
+      - in: query
+        name: servicio
+        schema:
+          type: string
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      - in: query
+        name: tipo
+        schema:
+          type: string
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAlojamientoList'
+          description: ''
+    post:
+      operationId: alojamientos_create
+      tags:
+      - alojamientos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Alojamiento'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Alojamiento'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Alojamiento'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alojamiento'
+          description: ''
+  /api/v1/alojamientos/{id}/:
+    get:
+      operationId: alojamientos_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alojamiento'
+          description: ''
+    patch:
+      operationId: alojamientos_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alojamiento'
+          description: ''
+    delete:
+      operationId: alojamientos_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/alojamientos/{id}/disponibilidad/:
+    get:
+      operationId: alojamientos_disponibilidad_retrieve
+      parameters:
+      - in: query
+        name: desde
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: hasta
+        schema:
+          type: string
+        required: true
+      - in: query
+        name: huespedes
+        schema:
+          type: integer
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cotizacion'
+          description: ''
+  /api/v1/alojamientos/{id}/favorito/:
+    get:
+      operationId: alojamientos_favorito_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardado:
+                    type: boolean
+          description: ''
+        '204':
+          description: No response body
+    post:
+      operationId: alojamientos_favorito_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardado:
+                    type: boolean
+          description: ''
+        '204':
+          description: No response body
+    delete:
+      operationId: alojamientos_favorito_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardado:
+                    type: boolean
+          description: ''
+        '204':
+          description: No response body
+  /api/v1/alojamientos/{id}/fotos/:
+    post:
+      operationId: alojamientos_fotos_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - alojamientos
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CargaFotos'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPropiedadFotoList'
+          description: ''
+  /api/v1/alojamientos/{id}/fotos/{foto_id}/:
+    delete:
+      operationId: alojamientos_fotos_destroy
+      parameters:
+      - in: path
+        name: foto_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/alojamientos/{id}/fotos/{foto_id}/portada/:
+    patch:
+      operationId: alojamientos_fotos_portada_partial_update
+      parameters:
+      - in: path
+        name: foto_id
+        schema:
+          type: string
+          pattern: ^\d+$
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedAlojamiento'
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alojamiento'
+          description: ''
+  /api/v1/alojamientos/{id}/resenas/:
+    get:
+      operationId: alojamientos_resenas_list
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - alojamientos
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResenaList'
+          description: ''
+    post:
+      operationId: alojamientos_resenas_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Propiedad.
+        required: true
+      tags:
+      - alojamientos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Resena'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Resena'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Resena'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resena'
+          description: ''
+  /api/v1/asistente/:
+    post:
+      operationId: asistente_create
+      description: Endpoint conversacional del agente IA.
+      tags:
+      - asistente
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatEntrada'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChatEntrada'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChatEntrada'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSalida'
+          description: ''
+  /api/v1/auth/csrf/:
+    get:
+      operationId: auth_csrf_retrieve
+      tags:
+      - auth
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenCsrf'
+          description: ''
+  /api/v1/auth/ingresar/:
+    post:
+      operationId: auth_ingresar_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Ingreso'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Ingreso'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Ingreso'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SesionIniciada'
+          description: ''
+  /api/v1/auth/registro/:
+    post:
+      operationId: auth_registro_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registro'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Registro'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Registro'
+        required: true
+      security:
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+          description: ''
+  /api/v1/auth/renovar/:
+    post:
+      operationId: auth_renovar_create
+      tags:
+      - auth
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccesoRenovado'
+          description: ''
+  /api/v1/auth/salir/:
+    post:
+      operationId: auth_salir_create
+      tags:
+      - auth
+      security:
+      - {}
+      responses:
+        '204':
+          description: No response body
+  /api/v1/cuenta/favoritos/:
+    get:
+      operationId: cuenta_favoritos_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - cuenta
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAlojamientoList'
+          description: ''
+  /api/v1/cuenta/panel/:
+    get:
+      operationId: cuenta_panel_retrieve
+      tags:
+      - cuenta
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Panel'
+          description: ''
+  /api/v1/cuenta/perfil/:
+    get:
+      operationId: cuenta_perfil_retrieve
+      tags:
+      - cuenta
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+          description: ''
+  /api/v1/cuenta/usuarios/:
+    get:
+      operationId: cuenta_usuarios_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - cuenta
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsuarioList'
+          description: ''
+  /api/v1/notificaciones/:
+    get:
+      operationId: notificaciones_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - notificaciones
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificacionList'
+          description: ''
+  /api/v1/notificaciones/{id}/:
+    get:
+      operationId: notificaciones_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Notificacion.
+        required: true
+      tags:
+      - notificaciones
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notificacion'
+          description: ''
+  /api/v1/notificaciones/{id}/leer/:
+    post:
+      operationId: notificaciones_leer_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Notificacion.
+        required: true
+      tags:
+      - notificaciones
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Notificacion'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Notificacion'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Notificacion'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notificacion'
+          description: ''
+  /api/v1/reservas/:
+    get:
+      operationId: reservas_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - reservas
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedReservaWebList'
+          description: ''
+    post:
+      operationId: reservas_create
+      tags:
+      - reservas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearReserva'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CrearReserva'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CrearReserva'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservaWeb'
+          description: ''
+  /api/v1/reservas/{id}/:
+    get:
+      operationId: reservas_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Reserva.
+        required: true
+      tags:
+      - reservas
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservaWeb'
+          description: ''
+  /api/v1/reservas/{id}/cancelar/:
+    post:
+      operationId: reservas_cancelar_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Reserva.
+        required: true
+      tags:
+      - reservas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Cancelacion'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Cancelacion'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Cancelacion'
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservaWeb'
+          description: ''
+  /api/v1/reservas/{id}/estado/:
+    post:
+      operationId: reservas_estado_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Reserva.
+        required: true
+      tags:
+      - reservas
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstadoReserva'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EstadoReserva'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EstadoReserva'
+        required: true
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservaWeb'
+          description: ''
+  /api/v1/servicios/:
+    get:
+      operationId: servicios_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: Un número de página dentro del conjunto de resultados paginado.
+        schema:
+          type: integer
+      - name: tamano
+        required: false
+        in: query
+        description: Número de resultados a devolver por página.
+        schema:
+          type: integer
+      tags:
+      - servicios
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAmenityList'
+          description: ''
+  /api/v1/servicios/{id}/:
+    get:
+      operationId: servicios_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: Un valor de entero único que identifique este Amenity.
+        required: true
+      tags:
+      - servicios
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Amenity'
+          description: ''
+components:
+  schemas:
+    AccesoRenovado:
+      type: object
+      properties:
+        access:
+          type: string
+      required:
+      - access
+    Alojamiento:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          maxLength: 200
+        descripcion:
+          type: string
+          maxLength: 10000
+        calle:
+          type: string
+          maxLength: 255
+        ubicacion:
+          type: string
+          description: Ciudad donde se encuentra la propiedad.
+          maxLength: 255
+        tipo_alojamiento:
+          $ref: '#/components/schemas/TipoAlojamientoEnum'
+        capacidad_maxima_huespedes:
+          type: integer
+          maximum: 100
+          minimum: 1
+        precio_noche:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Precio noche (Gs.)
+        precio_fin_semana:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Precio fin de semana (Gs.)
+        tarifa_limpieza:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Tarifa limpieza (Gs.)
+        estado:
+          $ref: '#/components/schemas/AlojamientoEstadoEnum'
+        permite_mascotas:
+          type: boolean
+        permite_fumar:
+          type: boolean
+        permite_fiestas:
+          type: boolean
+        politica_cancelacion:
+          $ref: '#/components/schemas/PoliticaCancelacionEnum'
+        anfitrion:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioPublico'
+          readOnly: true
+        amenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          readOnly: true
+        servicios:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        fotos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PropiedadFoto'
+          readOnly: true
+        puntuacion:
+          type: number
+          format: double
+          readOnly: true
+          nullable: true
+        cantidad_resenas:
+          type: integer
+          readOnly: true
+      required:
+      - amenities
+      - anfitrion
+      - cantidad_resenas
+      - descripcion
+      - fotos
+      - id
+      - precio_fin_semana
+      - precio_noche
+      - puntuacion
+      - tarifa_limpieza
+      - titulo
+      - ubicacion
+    AlojamientoEstadoEnum:
+      enum:
+      - disponible
+      - pausada
+      - inactiva
+      type: string
+      description: |-
+        * `disponible` - Disponible
+        * `pausada` - Pausada
+        * `inactiva` - Inactiva
+    Amenity:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        nombre:
+          type: string
+          maxLength: 100
+      required:
+      - id
+      - nombre
+    Cancelacion:
+      type: object
+      properties:
+        motivo:
+          type: string
+          maxLength: 255
+    CargaFotos:
+      type: object
+      properties:
+        fotos:
+          type: array
+          items:
+            type: string
+            format: uri
+          maxItems: 5
+          minItems: 1
+      required:
+      - fotos
+    ChatEntrada:
+      type: object
+      properties:
+        message:
+          type: string
+          maxLength: 2000
+        confirm:
+          type: boolean
+        accion_firmada:
+          type: string
+      required:
+      - message
+    ChatSalida:
+      type: object
+      properties:
+        reply:
+          type: string
+        intent:
+          type: string
+        accion_firmada:
+          type: string
+        data: {}
+        pending_action: {}
+      required:
+      - intent
+      - reply
+    Cotizacion:
+      type: object
+      properties:
+        disponible:
+          type: boolean
+        noches:
+          type: integer
+        total:
+          type: string
+        limpieza:
+          type: string
+      required:
+      - disponible
+      - limpieza
+      - noches
+      - total
+    CrearReserva:
+      type: object
+      properties:
+        desde:
+          type: string
+          format: date
+        hasta:
+          type: string
+          format: date
+        huespedes:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 1
+        alojamiento:
+          type: integer
+      required:
+      - alojamiento
+      - desde
+      - hasta
+    EstadoReserva:
+      type: object
+      properties:
+        estado:
+          $ref: '#/components/schemas/EstadoReservaEstadoEnum'
+      required:
+      - estado
+    EstadoReservaEstadoEnum:
+      enum:
+      - confirmada
+      - rechazada
+      - activa
+      - completada
+      type: string
+      description: |-
+        * `confirmada` - confirmada
+        * `rechazada` - rechazada
+        * `activa` - activa
+        * `completada` - completada
+    Ingreso:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+      required:
+      - password
+      - username
+    Notificacion:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        mensaje:
+          type: string
+        estado:
+          type: string
+          maxLength: 20
+        fecha:
+          type: string
+          format: date-time
+        id_reserva:
+          type: integer
+          nullable: true
+      required:
+      - id
+      - mensaje
+    PaginatedAlojamientoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alojamiento'
+    PaginatedAmenityList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+    PaginatedNotificacionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notificacion'
+    PaginatedPropiedadFotoList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PropiedadFoto'
+    PaginatedResenaList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resena'
+    PaginatedReservaWebList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReservaWeb'
+    PaginatedUsuarioList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Usuario'
+    Panel:
+      type: object
+      properties:
+        alojamientos:
+          type: integer
+        reservas:
+          type: integer
+        pendientes:
+          type: integer
+        ingresos_simulados:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,20}(?:\.\d{0,0})?$
+        usuarios:
+          type: integer
+      required:
+      - alojamientos
+      - ingresos_simulados
+      - pendientes
+      - reservas
+    PatchedAlojamiento:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        titulo:
+          type: string
+          maxLength: 200
+        descripcion:
+          type: string
+          maxLength: 10000
+        calle:
+          type: string
+          maxLength: 255
+        ubicacion:
+          type: string
+          description: Ciudad donde se encuentra la propiedad.
+          maxLength: 255
+        tipo_alojamiento:
+          $ref: '#/components/schemas/TipoAlojamientoEnum'
+        capacidad_maxima_huespedes:
+          type: integer
+          maximum: 100
+          minimum: 1
+        precio_noche:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Precio noche (Gs.)
+        precio_fin_semana:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Precio fin de semana (Gs.)
+        tarifa_limpieza:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Tarifa limpieza (Gs.)
+        estado:
+          $ref: '#/components/schemas/AlojamientoEstadoEnum'
+        permite_mascotas:
+          type: boolean
+        permite_fumar:
+          type: boolean
+        permite_fiestas:
+          type: boolean
+        politica_cancelacion:
+          $ref: '#/components/schemas/PoliticaCancelacionEnum'
+        anfitrion:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioPublico'
+          readOnly: true
+        amenities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Amenity'
+          readOnly: true
+        servicios:
+          type: array
+          items:
+            type: integer
+            writeOnly: true
+          writeOnly: true
+        fotos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PropiedadFoto'
+          readOnly: true
+        puntuacion:
+          type: number
+          format: double
+          readOnly: true
+          nullable: true
+        cantidad_resenas:
+          type: integer
+          readOnly: true
+    PoliticaCancelacionEnum:
+      enum:
+      - flexible
+      - moderada
+      - estricta
+      type: string
+      description: |-
+        * `flexible` - Flexible
+        * `moderada` - Moderada
+        * `estricta` - Estricta
+    PropiedadFoto:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        foto:
+          type: string
+          format: uri
+        url:
+          type: string
+          readOnly: true
+        descripcion:
+          type: string
+          maxLength: 150
+        es_portada:
+          type: boolean
+        fecha_publicacion:
+          type: string
+          format: date-time
+      required:
+      - foto
+      - id
+      - url
+    Registro:
+      type: object
+      properties:
+        username:
+          type: string
+          title: Nombre de usuario
+          description: 'Requerido. 150 carácteres como máximo. Únicamente letras,
+            dígitos y @/./+/-/_ '
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        first_name:
+          type: string
+          title: Nombre
+          maxLength: 150
+        last_name:
+          type: string
+          title: Apellidos
+          maxLength: 150
+        email:
+          type: string
+          format: email
+        telefono:
+          type: string
+          nullable: true
+          maxLength: 20
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+        rol:
+          $ref: '#/components/schemas/RegistroRolEnum'
+      required:
+      - email
+      - password
+      - rol
+      - username
+    RegistroRolEnum:
+      enum:
+      - huesped
+      - anfitrion
+      type: string
+      description: |-
+        * `huesped` - huesped
+        * `anfitrion` - anfitrion
+    Resena:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        calificacion:
+          type: integer
+          maximum: 5
+          minimum: 1
+        comentario:
+          type: string
+          maxLength: 2000
+        fecha:
+          type: string
+          format: date-time
+          readOnly: true
+        usuario:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioPublico'
+          readOnly: true
+        id_reserva:
+          type: integer
+      required:
+      - calificacion
+      - comentario
+      - fecha
+      - id
+      - id_reserva
+      - usuario
+    ReservaWeb:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        fecha_inicio:
+          type: string
+          format: date
+        fecha_fin:
+          type: string
+          format: date
+        cantidad_huespedes:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: -9223372036854775808
+          format: int64
+        estado:
+          $ref: '#/components/schemas/ReservaWebEstadoEnum'
+        precio_total:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Precio total (Gs.)
+        propiedad:
+          allOf:
+          - $ref: '#/components/schemas/Alojamiento'
+          readOnly: true
+        huesped:
+          allOf:
+          - $ref: '#/components/schemas/UsuarioPublico'
+          readOnly: true
+        monto_reembolso:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,12}(?:\.\d{0,0})?$
+          title: Reembolso simulado (Gs.)
+        motivo_cancelacion:
+          type: string
+          maxLength: 255
+        tiene_resena:
+          type: boolean
+          readOnly: true
+      required:
+      - cantidad_huespedes
+      - fecha_fin
+      - fecha_inicio
+      - huesped
+      - id
+      - precio_total
+      - propiedad
+      - tiene_resena
+    ReservaWebEstadoEnum:
+      enum:
+      - pendiente
+      - confirmada
+      - activa
+      - completada
+      - cancelada
+      - rechazada
+      type: string
+      description: |-
+        * `pendiente` - Pendiente
+        * `confirmada` - Confirmada
+        * `activa` - Activa
+        * `completada` - Completada
+        * `cancelada` - Cancelada
+        * `rechazada` - Rechazada
+    SesionIniciada:
+      type: object
+      properties:
+        access:
+          type: string
+        usuario:
+          $ref: '#/components/schemas/Usuario'
+        csrfToken:
+          type: string
+      required:
+      - access
+      - csrfToken
+      - usuario
+    TipoAlojamientoEnum:
+      enum:
+      - casa_entera
+      - departamento
+      - habitacion_privada
+      - habitacion_compartida
+      type: string
+      description: |-
+        * `casa_entera` - Casa entera
+        * `departamento` - Departamento
+        * `habitacion_privada` - Habitacion privada
+        * `habitacion_compartida` - Habitacion compartida
+    TokenCsrf:
+      type: object
+      properties:
+        csrfToken:
+          type: string
+      required:
+      - csrfToken
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          title: Nombre de usuario
+          description: 'Requerido. 150 carácteres como máximo. Únicamente letras,
+            dígitos y @/./+/-/_ '
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        first_name:
+          type: string
+          title: Nombre
+          maxLength: 150
+        last_name:
+          type: string
+          title: Apellidos
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          title: Dirección de correo electrónico
+          maxLength: 254
+        rol:
+          $ref: '#/components/schemas/UsuarioRolEnum'
+        telefono:
+          type: string
+          nullable: true
+          maxLength: 20
+      required:
+      - id
+      - username
+    UsuarioPublico:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          title: Nombre de usuario
+          description: 'Requerido. 150 carácteres como máximo. Únicamente letras,
+            dígitos y @/./+/-/_ '
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        first_name:
+          type: string
+          title: Nombre
+          maxLength: 150
+      required:
+      - id
+      - username
+    UsuarioRolEnum:
+      enum:
+      - admin
+      - anfitrion
+      - huesped
+      type: string
+      description: |-
+        * `admin` - Admin
+        * `anfitrion` - Anfitrion
+        * `huesped` - Huesped
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -40,7 +40,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("presupuesto", "0002_alter_usuario_options_alter_usuario_managers_and_more"),
     ]
-
+                     #agrega el campo calle a propiedad, modica ubicacion texto de ayudad
     operations = [
         migrations.AddField(
             model_name="propiedad",
@@ -62,7 +62,7 @@ class Migration(migrations.Migration):
             name="fecha_publicacion",
             field=models.DateTimeField(default=django.utils.timezone.now),
         ),
-        migrations.RunPython(uppercase_amenities, migrations.RunPython.noop),
+        migrations.RunPython(uppercase_amenities, migrations.RunPython.noop), #normalixa los nombres de los amenities a mayusculas y elimina duplicados
         migrations.RemoveField(
             model_name="propiedad",
             name="amenities",

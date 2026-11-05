@@ -2,7 +2,7 @@ import unicodedata
 
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -18,6 +18,8 @@ class Usuario(AbstractUser):
     fecha_registro = models.DateTimeField(default=timezone.now)
 
     def save(self, *args, **kwargs):
+        if self.is_superuser:
+            self.rol = 'admin'
         if self.rol in ["admin", "anfitrion", "huesped"]:
             self.is_staff = True
         super().save(*args, **kwargs)
@@ -55,6 +57,7 @@ class Propiedad(models.Model):
     ]
     TIPO_ALOJAMIENTO_CHOICES = [
         ("casa_entera", "Casa entera"),
+        ("departamento", "Departamento"),
         ("habitacion_privada", "Habitacion privada"),
         ("habitacion_compartida", "Habitacion compartida"),
     ]
@@ -101,6 +104,7 @@ class Propiedad(models.Model):
     class Meta:
         verbose_name = "Propiedad"
         verbose_name_plural = "Propiedades"
+        indexes = [models.Index(fields=['estado', 'ubicacion'], name='prop_estado_ciudad')]
 
     def __str__(self):
         return self.titulo
@@ -124,6 +128,23 @@ class PropiedadFoto(models.Model):
 
     def __str__(self):
         return f"Foto de {self.propiedad}"
+
+    def clean(self):
+        from .imagenes import MAXIMO_FOTOS, preparar_imagen
+        super().clean()
+        if self.propiedad_id and PropiedadFoto.objects.filter(propiedad_id=self.propiedad_id).exclude(pk=self.pk).count() >= MAXIMO_FOTOS:
+            raise ValidationError('Un alojamiento admite hasta 5 fotos.')
+        if self.foto and not self.foto._committed:
+            self.foto = preparar_imagen(self.foto)
+
+    def save(self, *args, **kwargs):
+        # La fila padre serializa cargas simultáneas en PostgreSQL.
+        with transaction.atomic():
+            Propiedad.objects.select_for_update().get(pk=self.propiedad_id)
+            self.full_clean()
+            if self.es_portada:
+                PropiedadFoto.objects.filter(propiedad_id=self.propiedad_id).exclude(pk=self.pk).update(es_portada=False)
+            super().save(*args, **kwargs)
 
 
 class Reserva(models.Model):
@@ -166,6 +187,7 @@ class Reserva(models.Model):
     class Meta:
         verbose_name = "Reserva"
         verbose_name_plural = "Reservas"
+        indexes = [models.Index(fields=['id_propiedad', 'estado', 'fecha_inicio', 'fecha_fin'], name='reserva_disponibilidad')]
 
     def clean(self):
         if self.fecha_inicio and self.fecha_fin and self.fecha_fin <= self.fecha_inicio:
@@ -294,3 +316,11 @@ class Review(models.Model):
     class Meta:
         verbose_name = "Reseña"
         verbose_name_plural = "Reseñas"
+
+
+class Favorito(models.Model):
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='favoritos')
+    propiedad = models.ForeignKey(Propiedad, on_delete=models.CASCADE, related_name='favoritos')
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['usuario', 'propiedad'], name='favorito_unico')]
