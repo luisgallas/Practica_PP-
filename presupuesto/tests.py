@@ -1,14 +1,21 @@
 from datetime import date, timedelta
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from unittest.mock import patch
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .models import Amenity, Disponibilidad, Propiedad, Reserva, Review, Usuario
 
 
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class AgentApiTests(TestCase):
     def setUp(self):
+        cache.clear()
+        reloj = patch("django.utils.timezone.localdate", return_value=date(2026, 6, 1))
+        reloj.start()
+        self.addCleanup(reloj.stop)
         self.client = APIClient()
         self.admin_user = Usuario.objects.create_user(username="admin_user", password="x", rol="admin")
         self.host = Usuario.objects.create_user(username="host", password="x", rol="anfitrion")
@@ -177,6 +184,7 @@ class AgentApiTests(TestCase):
         self.assertEqual(response.data["fotos"], [])
 
     def test_agent_requires_confirmation_before_creating_reservation(self):
+        self.authenticate_as(self.guest)
         response = self.client.post(
             "/api/agent/chat/",
             {
@@ -195,7 +203,7 @@ class AgentApiTests(TestCase):
             {
                 "message": "confirmo",
                 "confirm": True,
-                "pending_action": response.data["pending_action"],
+                "accion_firmada": response.data["accion_firmada"],
             },
             format="json",
         )
@@ -213,6 +221,7 @@ class AgentApiTests(TestCase):
         self.assertEqual(disponibilidad.id_reserva, reserva)
 
     def test_agent_understands_natural_reservation_request_with_slash_dates(self):
+        self.authenticate_as(self.guest)
         response = self.client.post(
             "/api/agent/chat/",
             {
@@ -232,6 +241,7 @@ class AgentApiTests(TestCase):
         self.assertIn("Quinta XS", response.data["reply"])
 
     def test_agent_rejects_past_reservation_request(self):
+        self.authenticate_as(self.guest)
         past_start = timezone.localdate() - timedelta(days=1)
         response = self.client.post(
             "/api/agent/chat/",
@@ -250,6 +260,7 @@ class AgentApiTests(TestCase):
         self.assertIn("fecha de entrada pasada", response.data["reply"])
 
     def test_agent_understands_written_date_range_with_repeated_month(self):
+        self.authenticate_as(self.guest)
         response = self.client.post(
             "/api/agent/chat/",
             {
@@ -269,6 +280,7 @@ class AgentApiTests(TestCase):
         self.assertIn("del 2026-07-07 al 2026-07-09", response.data["reply"])
 
     def test_agent_understands_desde_hasta_date_range(self):
+        self.authenticate_as(self.guest)
         response = self.client.post(
             "/api/agent/chat/",
             {
@@ -288,6 +300,7 @@ class AgentApiTests(TestCase):
         self.assertIn("del 2026-07-10 al 2026-07-14", response.data["reply"])
 
     def test_host_pending_summary(self):
+        self.authenticate_as(self.host)
         Reserva.objects.create(
             id_propiedad=self.property,
             id_huesped=self.guest,
@@ -309,6 +322,7 @@ class AgentApiTests(TestCase):
         self.assertIn("1 reserva", response.data["reply"])
 
     def test_host_pending_detail_lists_reservations(self):
+        self.authenticate_as(self.host)
         Reserva.objects.create(
             id_propiedad=self.property,
             id_huesped=self.guest,
@@ -333,6 +347,7 @@ class AgentApiTests(TestCase):
         self.assertIn("2026-06-16", response.data["reply"])
 
     def test_host_question_with_guest_user_explains_wrong_role(self):
+        self.authenticate_as(self.guest)
         response = self.client.post(
             "/api/agent/chat/",
             {"message": "Cuantas reservas tengo en total?", "user_id": self.guest.id},
@@ -344,6 +359,7 @@ class AgentApiTests(TestCase):
         self.assertIn("rol Huesped", response.data["reply"])
 
     def test_admin_user_can_ask_global_reservation_count(self):
+        self.authenticate_as(self.admin_user)
         Reserva.objects.create(
             id_propiedad=self.property,
             id_huesped=self.guest,
@@ -366,6 +382,7 @@ class AgentApiTests(TestCase):
         self.assertIn("en todo el sistema", response.data["reply"])
 
     def test_agent_answers_property_reviews(self):
+        self.authenticate_as(self.guest)
         reserva = Reserva.objects.create(
             id_propiedad=self.property,
             id_huesped=self.guest,

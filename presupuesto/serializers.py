@@ -22,7 +22,7 @@ class PropiedadFotoSerializer(serializers.ModelSerializer):
         model = PropiedadFoto
         fields = ["id", "foto", "url", "descripcion", "es_portada", "fecha_publicacion"]
 
-    def get_url(self, obj):
+    def get_url(self, obj) -> str:
         request = self.context.get("request")
         if not obj.foto:
             return ""
@@ -32,9 +32,12 @@ class PropiedadFotoSerializer(serializers.ModelSerializer):
 
 
 class PropiedadSerializer(serializers.ModelSerializer):
-    anfitrion = UsuarioSerializer(source="id_anfitrion", read_only=True)
+    anfitrion = serializers.SerializerMethodField()
     amenities = AmenitySerializer(many=True, read_only=True)
     fotos = PropiedadFotoSerializer(many=True, read_only=True)
+
+    def get_anfitrion(self, obj):
+        return {'id': obj.id_anfitrion_id, 'username': obj.id_anfitrion.username, 'first_name': obj.id_anfitrion.first_name}
 
     class Meta:
         model = Propiedad

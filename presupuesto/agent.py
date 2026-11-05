@@ -481,7 +481,7 @@ def chat(payload):
         return {"reply": OUT_OF_SCOPE_REPLY, "intent": "out_of_scope"}
 
     if wants_to_create_reservation(normalized):
-        return handle_create_reservation(message, user_id)
+        return handle_create_reservation(message, user_id)# para crear reservas 
 
     if any(word in normalized for word in ["disponible", "disponibilidad", "hay propiedades"]):
         return handle_availability(message)

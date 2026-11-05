@@ -1,9 +1,11 @@
+#define como se admnistran los datos desde la interfaz de djando admin, con permisos, filtros,acciones
 import json
 
 from django import forms
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import render
 from django.utils import timezone
@@ -47,11 +49,11 @@ def ordered_get_app_list(request, app_label=None):
 
 admin.site.get_app_list = ordered_get_app_list
 
-
+#define los permissos segun el rol del usuario 
 def is_admin_role(user):
     return user.is_superuser or getattr(user, "rol", None) == "admin"
 
-
+# airve para ver si agregar, editar o eliminar un objeto segun el rol del usuario
 class RoleAdminMixin:
     allowed_roles = ("admin",)
     add_roles = ("admin",)
@@ -93,7 +95,7 @@ class UsuarioAdmin(RoleAdminMixin, UserAdmin):
         ("Datos de booking", {"fields": ("rol", "telefono", "fecha_registro")}),
     )
     list_display = ("username", "email", "rol", "is_staff", "is_active")
-
+    #agrega filtros para buscar usuarios por rol, estado y fecha de registro
 
 @admin.register(Amenity)
 class AmenityAdmin(RoleAdminMixin, admin.ModelAdmin):
@@ -101,7 +103,7 @@ class AmenityAdmin(RoleAdminMixin, admin.ModelAdmin):
     add_roles = ("admin", "anfitrion")
     change_roles = ("admin", "anfitrion")
     delete_roles = ("admin",)
-    search_fields = ("nombre",)
+    search_fields = ("nombre",) #agrega campos para buscar amenities por nombre
 
 
 @admin.register(Notificacion)
@@ -141,6 +143,11 @@ class PropiedadFotoInline(admin.TabularInline):
     fields = ("foto", "descripcion", "es_portada", "fecha_publicacion")
     readonly_fields = ("fecha_publicacion",)
     extra = 1
+    max_num = 5
+
+    def get_formset(self, request, obj=None, **kwargs):
+        kwargs['validate_max'] = True
+        return super().get_formset(request, obj, **kwargs)
 
 
 @admin.action(description="Eliminar seleccionado")
@@ -348,7 +355,8 @@ class PreguntarIAAdmin(RoleAdminMixin, admin.ModelAdmin):
         if request.method == "POST":
             form = AgenteIATestForm(request.POST)
             if form.is_valid():
-                selected_user = form.cleaned_data["usuario"]
+                selected_user = form.cleaned_data["usuario"] if is_admin_role(request.user) else request.user
+                selected_user = selected_user or request.user
                 payload = {"message": form.cleaned_data["message"]}
 
                 if selected_user:
@@ -356,17 +364,18 @@ class PreguntarIAAdmin(RoleAdminMixin, admin.ModelAdmin):
                 if form.cleaned_data["confirm"]:
                     payload["confirm"] = True
 
-                raw_pending_action = form.cleaned_data.get("pending_action")
-                if raw_pending_action:
-                    try:
-                        payload["pending_action"] = json.loads(raw_pending_action)
-                    except json.JSONDecodeError:
-                        payload["pending_action"] = {}
+                if payload.get('confirm') or agent.normalize(payload['message']) in {'si', 'confirmo', 'confirmar', 'dale'}:
+                    pendiente = request.session.get('reserva_chat_admin', {})
+                    if pendiente.get('usuario') == selected_user.pk:
+                        payload['pending_action'] = pendiente.get('accion', {})
+                if selected_user.rol != 'huesped' and (agent.wants_to_create_reservation(agent.normalize(payload['message'])) or payload.get('pending_action')):
+                    raise PermissionDenied('Solo huéspedes pueden crear reservas.')
 
                 result = agent.chat(payload)
                 result_json = json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
                 if result.get("pending_action"):
+                    request.session['reserva_chat_admin'] = {'usuario': selected_user.pk, 'accion': result['pending_action']}
                     pending_action_json = json.dumps(result["pending_action"], ensure_ascii=False)
                     form = AgenteIATestForm(
                         initial={
@@ -376,6 +385,7 @@ class PreguntarIAAdmin(RoleAdminMixin, admin.ModelAdmin):
                         }
                     )
                 elif result.get("intent") == "create_reservation_confirmed":
+                    request.session.pop('reserva_chat_admin', None)
                     form = AgenteIATestForm(
                         initial={
                             "usuario": selected_user.id if selected_user else None,
@@ -384,6 +394,10 @@ class PreguntarIAAdmin(RoleAdminMixin, admin.ModelAdmin):
                     )
         else:
             form = AgenteIATestForm(initial=initial)
+
+        if not is_admin_role(request.user):
+            form.fields['usuario'].queryset = Usuario.objects.filter(pk=request.user.pk)
+            form.fields['usuario'].initial = request.user.pk
 
         context = {
             **self.admin_site.each_context(request),
@@ -581,7 +595,15 @@ class ReservaAdmin(RoleAdminMixin, admin.ModelAdmin):
         formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
         return formfield
 
+    @transaction.atomic
     def save_model(self, request, obj, form, change):
+        # Revalida bajo el mismo bloqueo que usa la API para evitar solapamientos.
+        Propiedad.objects.select_for_update().get(pk=obj.id_propiedad_id)
+        form.clean()
+        if change and obj.estado != Reserva.objects.get(pk=obj.pk).estado:
+            original = Reserva.objects.get(pk=obj.pk)
+            update_reservation_status(original, obj.estado)
+            return
         if request.user.rol == "huesped":
             if change:
                 original = Reserva.objects.get(pk=obj.pk)

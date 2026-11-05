@@ -1,15 +1,23 @@
 from datetime import datetime
 
 from django.contrib.auth import authenticate
+from django.db.models import Sum
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404
+from django.core import signing
+from django.conf import settings
+from django.shortcuts import redirect
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
+from presupuesto.api_serializadores import ChatEntradaSerializer, ChatSalidaSerializer, IngresoSerializer
+from presupuesto.api_sesion import LimiteIngreso
 
 from presupuesto import agent
 from presupuesto.authentication import create_jwt_for_user
-from presupuesto.models import Amenity, HistorialPropiedadVisitada, Notificacion, Propiedad, Reserva
+from presupuesto.models import Amenity, HistorialPropiedadVisitada, Notificacion, Propiedad, Reserva, Review
 from presupuesto.permissions import can_cancel_reservation, can_manage_reservation
 from presupuesto.serializers import (
     AmenitySerializer,
@@ -30,36 +38,8 @@ from presupuesto.services import (
 
 
 def home(request):
-    """Pagina principal del backend."""
-    propiedades_count = Propiedad.objects.count()
-    html = f"""
-    <!doctype html>
-    <html lang="es">
-    <head>
-        <meta charset="utf-8">
-        <title>Practica PP - Booking</title>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.5; }}
-            code {{ background: #f2f2f2; padding: 2px 6px; border-radius: 4px; }}
-            li {{ margin: 8px 0; }}
-        </style>
-    </head>
-    <body>
-        <h1>Practica PP - Booking con agente IA</h1>
-        <p>Backend Django funcionando. Propiedades cargadas: <strong>{propiedades_count}</strong>.</p>
-        <h2>Endpoints principales</h2>
-        <ul>
-            <li><a href="/api/health/">/api/health/</a> - salud del backend</li>
-            <li><a href="/api/properties/">/api/properties/</a> - propiedades</li>
-            <li><a href="/api/availability/?start_date=2026-07-20&end_date=2026-07-25&guests=2">/api/availability/</a> - disponibilidad</li>
-            <li><a href="/api/agent/system-prompt/">/api/agent/system-prompt/</a> - system prompt</li>
-            <li><code>POST /api/agent/chat/</code> - chat del agente</li>
-        </ul>
-        <p>Para probar el chat con POST, usa <code>docs/demo_requests.http</code> o <code>scripts/demo_agent.ps1</code>.</p>
-    </body>
-    </html>
-    """
-    return HttpResponse(html)
+    """Abre la interfaz React; la API conserva su propia ruta."""
+    return redirect(settings.FRONTEND_URL)
 
 
 def api_info(request):
@@ -72,13 +52,13 @@ def api_info(request):
 
 class PropiedadListAPIView(generics.ListAPIView): #hereda de ListAPIView para listar objetos
     """Lista todas las propiedades."""
-    queryset = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities') #optimiza consultas a la base de datos
+    queryset = Propiedad.objects.filter(estado='disponible').select_related('id_anfitrion').prefetch_related('amenities', 'fotos') #optimiza consultas a la base de datos
     serializer_class = PropiedadSerializer #especifica el serializer a usar para convertir objetos a JSON
 
 
 class PropiedadDetailAPIView(generics.RetrieveAPIView):
     """Muestra el detalle de una propiedad."""
-    queryset = Propiedad.objects.select_related('id_anfitrion').prefetch_related('amenities', 'fotos')
+    queryset = Propiedad.objects.filter(estado='disponible').select_related('id_anfitrion').prefetch_related('amenities', 'fotos')
     serializer_class = PropiedadSerializer
 
     def get_object(self):
@@ -111,6 +91,10 @@ class AvailabilityAPIView(APIView):
             end_date = parse_query_date(request.query_params.get("end_date"), "end_date")
             guests = int(request.query_params.get("guests") or 1)
             property_id = request.query_params.get("property_id")
+            if property_id:
+                property_id = int(property_id)
+            if guests < 1 or guests > 100 or (end_date - start_date).days > 365:
+                raise ValueError('Usá entre 1 y 100 huéspedes y una estadía de hasta 365 noches.')
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -184,7 +168,7 @@ class ReservationStatusAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        reserva = Reserva.objects.select_related("id_propiedad__id_anfitrion", "id_huesped").get(pk=pk)
+        reserva = get_object_or_404(Reserva.objects.select_related("id_propiedad__id_anfitrion", "id_huesped"), pk=pk)
         if not can_manage_reservation(request.user, reserva):
             return Response({"detail": "No tenes permiso para cambiar esta reserva."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -199,7 +183,7 @@ class ReservationCancelAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        reserva = Reserva.objects.select_related("id_propiedad__id_anfitrion", "id_huesped").get(pk=pk)
+        reserva = get_object_or_404(Reserva.objects.select_related("id_propiedad__id_anfitrion", "id_huesped"), pk=pk)
         if not can_cancel_reservation(request.user, reserva):
             return Response({"detail": "No tenes permiso para cancelar esta reserva."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -216,17 +200,21 @@ class ReservationCancelAPIView(APIView):
 
 class AuthLoginAPIView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [LimiteIngreso]
 
     def post(self, request):
-        username = request.data.get("username")
-        password = request.data.get("password")
+        datos = IngresoSerializer(data=request.data)
+        datos.is_valid(raise_exception=True)
+        username = datos.validated_data['username']
+        password = datos.validated_data['password']
         user = authenticate(request, username=username, password=password)
         if not user:
             return Response({"detail": "Credenciales invalidas."}, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             "access": create_jwt_for_user(user),
             "token_type": "Bearer",
-            "expires_in": 3600,
+            "expires_in": 600,
             "user": UsuarioSerializer(user).data,
         })
 
@@ -289,9 +277,32 @@ class HostDashboardAPIView(APIView):
 
 class AgentChatAPIView(APIView):
     """Endpoint conversacional del agente IA."""
+    permission_classes = [permissions.IsAuthenticated]
 
+    @extend_schema(request=ChatEntradaSerializer, responses=ChatSalidaSerializer)
     def post(self, request):
-        return Response(agent.chat(request.data))
+        mensaje = request.data.get('message', '')
+        if not isinstance(mensaje, str) or len(mensaje) > 2000:
+            return Response({'detail': 'El mensaje admite hasta 2000 caracteres.'}, status=400)
+        datos = {'message': mensaje, 'user_id': request.user.pk}
+        confirmacion = request.data.get('confirm') is True or agent.normalize(mensaje) in {'si', 'confirmo', 'confirmar', 'dale'}
+        if confirmacion:
+            try:
+                pendiente = signing.loads(request.data.get('accion_firmada', ''), salt='reserva-chat', max_age=900)
+                if pendiente['usuario'] != request.user.pk or request.user.rol != 'huesped':
+                    raise signing.BadSignature()
+            except (signing.BadSignature, TypeError, KeyError):
+                return Response({'detail': 'La confirmación venció o no pertenece a tu sesión.'}, status=400)
+            datos.update(confirm=True, pending_action=pendiente['accion'])
+        elif agent.wants_to_create_reservation(agent.normalize(mensaje)) and request.user.rol != 'huesped':
+            return Response({'detail': 'Ingresá como huésped para reservar.'}, status=403)
+        try:
+            resultado = agent.chat(datos)
+        except ValueError:
+            return Response({'detail': 'Revisá las fechas del mensaje; deben ser fechas válidas.'}, status=400)
+        if resultado.get('pending_action'):
+            resultado['accion_firmada'] = signing.dumps({'usuario': request.user.pk, 'accion': resultado['pending_action']}, salt='reserva-chat')
+        return Response(resultado)
 
 
 class AgentSystemPromptAPIView(APIView):
