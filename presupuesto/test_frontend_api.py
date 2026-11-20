@@ -9,7 +9,7 @@ from unittest import skipUnless
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection, close_old_connections
+from django.db import connection, connections, close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -424,7 +424,8 @@ class ConcurrenciaReservasTests(TransactionTestCase):
             except ValueError:
                 return 'ocupada'
             finally:
-                close_old_connections()
+                # Cada hilo debe cerrar incluso sus conexiones persistentes sanas.
+                connections.close_all()
         with ThreadPoolExecutor(max_workers=2) as ejecutor:
             resultados = list(ejecutor.map(lambda _: intento(), range(2)))
         self.assertCountEqual(resultados, ['creada', 'ocupada'])
