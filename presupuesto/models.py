@@ -69,6 +69,8 @@ class Propiedad(models.Model):
 
     titulo = models.CharField(max_length=200)
     descripcion = models.TextField()
+    google_maps_url = models.URLField(max_length=2048, blank=True, default="")
+    telefono_contacto = models.CharField(max_length=20, blank=True, default="")
     calle = models.CharField(max_length=255, blank=True, default="")
     ubicacion = models.CharField(max_length=255, help_text="Ciudad donde se encuentra la propiedad.")
     tipo_alojamiento = models.CharField(

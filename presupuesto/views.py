@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from django.contrib.auth import authenticate
 from django.db.models import Sum
@@ -284,24 +285,53 @@ class AgentChatAPIView(APIView):
         mensaje = request.data.get('message', '')
         if not isinstance(mensaje, str) or len(mensaje) > 2000:
             return Response({'detail': 'El mensaje admite hasta 2000 caracteres.'}, status=400)
-        datos = {'message': mensaje, 'user_id': request.user.pk}
-        confirmacion = request.data.get('confirm') is True or agent.normalize(mensaje) in {'si', 'confirmo', 'confirmar', 'dale'}
+        from presupuesto.conversacion import conversar
+        from presupuesto.services import calculate_price
+        from django.db import transaction
+        contexto = {}
+        token_contexto = request.data.get('contexto_firmado', '')
+        if token_contexto:
+            try:
+                if not isinstance(token_contexto, str) or len(token_contexto) > 16000:
+                    raise signing.BadSignature()
+                contenido = signing.loads(token_contexto, salt='contexto-chat', max_age=3600)
+                if contenido['usuario'] != request.user.pk:
+                    raise signing.BadSignature()
+                contexto = contenido['estado']
+            except (signing.BadSignature, TypeError, KeyError):
+                return Response({'detail': 'La conversación venció. Iniciá una nueva conversación.'}, status=400)
+        confirmacion = request.data.get('confirm') is True or agent.normalize(mensaje) in {'si', 'si confirmo', 'confirmo', 'confirmar', 'dale', 'si, confirmo'}
         if confirmacion:
             try:
                 pendiente = signing.loads(request.data.get('accion_firmada', ''), salt='reserva-chat', max_age=900)
                 if pendiente['usuario'] != request.user.pk or request.user.rol != 'huesped':
                     raise signing.BadSignature()
             except (signing.BadSignature, TypeError, KeyError):
-                return Response({'detail': 'La confirmación venció o no pertenece a tu sesión.'}, status=400)
-            datos.update(confirm=True, pending_action=pendiente['accion'])
-        elif agent.wants_to_create_reservation(agent.normalize(mensaje)) and request.user.rol != 'huesped':
-            return Response({'detail': 'Ingresá como huésped para reservar.'}, status=403)
-        try:
-            resultado = agent.chat(datos)
-        except ValueError:
-            return Response({'detail': 'Revisá las fechas del mensaje; deben ser fechas válidas.'}, status=400)
+                return Response({'detail': 'No hay una confirmación válida. Revisá el resumen de la reserva antes de confirmar.'}, status=400)
+            accion = pendiente['accion']
+            try:
+                with transaction.atomic():
+                    datos = accion['data']
+                    propiedad = Propiedad.objects.select_for_update().get(pk=datos['property_id'])
+                    total = calculate_price(propiedad, agent.parse_iso_date(datos['start_date']), agent.parse_iso_date(datos['end_date']))
+                    if datos.get('quoted_total') and total != Decimal(datos['quoted_total']):
+                        return Response({'detail': 'El precio cambió. Enviá «revisar» para obtener un resumen actualizado antes de confirmar.'}, status=400)
+                    resultado = agent.handle_confirmation({'pending_action': accion})
+            except Propiedad.DoesNotExist:
+                return Response({'detail': 'Este alojamiento ya no está disponible.'}, status=400)
+        else:
+            if agent.wants_to_create_reservation(agent.normalize(mensaje)) and request.user.rol != 'huesped':
+                return Response({'detail': 'Ingresá como huésped para reservar.'}, status=403)
+            try:
+                resultado = conversar(request.user, mensaje, contexto) if request.path.startswith('/api/v1/') else agent.chat({'message': mensaje, 'user_id': request.user.pk})
+            except ValueError:
+                return Response({'detail': 'Revisá las fechas del mensaje; deben ser fechas válidas.'}, status=400)
+        estado = resultado.pop('contexto', {})
+        resultado['contexto_firmado'] = signing.dumps({'usuario': request.user.pk, 'estado': estado}, salt='contexto-chat', compress=True)
         if resultado.get('pending_action'):
             resultado['accion_firmada'] = signing.dumps({'usuario': request.user.pk, 'accion': resultado['pending_action']}, salt='reserva-chat')
+        if request.path.startswith('/api/v1/'):
+            resultado.pop('pending_action', None)
         return Response(resultado)
 
 

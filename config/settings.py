@@ -18,6 +18,7 @@ except ValueError:
     DEBUG = True
 
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+ADMIN_REGISTRATION_CODE = config('ADMIN_REGISTRATION_CODE', default='')
 FRONTEND_URL = config('FRONTEND_URL', default='http://127.0.0.1:5173')
 if not DEBUG and (SECRET_KEY.startswith('django-insecure') or len(SECRET_KEY) < 50):
     raise ImproperlyConfigured('En producción configurá SECRET_KEY con al menos 50 caracteres aleatorios.')

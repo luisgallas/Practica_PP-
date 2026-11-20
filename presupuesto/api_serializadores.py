@@ -1,4 +1,8 @@
 """Contrato de la interfaz Hospeda PY. Los datos privados nunca son públicos."""
+import re
+from urllib.parse import urlsplit
+from django.conf import settings
+from django.utils.crypto import constant_time_compare
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as ErrorDjango
 from django.utils import timezone
@@ -24,7 +28,7 @@ class AlojamientoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Propiedad
-        fields = ['id', 'titulo', 'descripcion', 'calle', 'ubicacion', 'tipo_alojamiento', 'capacidad_maxima_huespedes', 'precio_noche', 'precio_fin_semana', 'tarifa_limpieza', 'estado', 'permite_mascotas', 'permite_fumar', 'permite_fiestas', 'politica_cancelacion', 'anfitrion', 'amenities', 'servicios', 'fotos', 'puntuacion', 'cantidad_resenas']
+        fields = ['id', 'titulo', 'descripcion', 'calle', 'ubicacion', 'google_maps_url', 'telefono_contacto', 'tipo_alojamiento', 'capacidad_maxima_huespedes', 'precio_noche', 'precio_fin_semana', 'tarifa_limpieza', 'estado', 'permite_mascotas', 'permite_fumar', 'permite_fiestas', 'politica_cancelacion', 'anfitrion', 'amenities', 'servicios', 'fotos', 'puntuacion', 'cantidad_resenas']
         extra_kwargs = {
             'capacidad_maxima_huespedes': {'min_value': 1, 'max_value': 100},
             'precio_noche': {'min_value': 1}, 'precio_fin_semana': {'min_value': 1},
@@ -32,16 +36,41 @@ class AlojamientoSerializer(serializers.ModelSerializer):
         }
 
 
+    def validate_google_maps_url(self, valor):
+        if not valor:
+            return valor
+        url = urlsplit(valor)
+        valido = (url.hostname == 'maps.app.goo.gl' or
+                  (url.hostname == 'goo.gl' and url.path.startswith('/maps/')) or
+                  url.hostname == 'maps.google.com' or
+                  (url.hostname in ['google.com', 'www.google.com'] and
+                   (url.path == '/maps' or url.path.startswith('/maps/'))))
+        if url.scheme != 'https' or url.username or url.password or url.port not in [None, 443] or not valido:
+            raise serializers.ValidationError('Pegá un enlace HTTPS de Google Maps usando Compartir → Copiar enlace.')
+        return valor
+
+    def validate_telefono_contacto(self, valor):
+        if valor and (not re.fullmatch(r'\+?[0-9 ()-]{7,20}', valor) or not 7 <= len(re.sub(r'\D', '', valor)) <= 15):
+            raise serializers.ValidationError('Ingresá un teléfono válido, con código de país. Ejemplo: +595 981 123456.')
+        return valor
+
+
 class RegistroSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, max_length=128)
-    rol = serializers.ChoiceField(choices=['huesped', 'anfitrion'])
+    rol = serializers.ChoiceField(choices=['huesped', 'anfitrion', 'admin'])
+    codigo_admin = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=128, trim_whitespace=False)
     email = serializers.EmailField(required=True)
 
     class Meta:
         model = Usuario
-        fields = ['username', 'first_name', 'last_name', 'email', 'telefono', 'password', 'rol']
+        fields = ['username', 'first_name', 'last_name', 'email', 'telefono', 'password', 'rol', 'codigo_admin']
 
     def validate(self, datos):
+        codigo = datos.pop('codigo_admin', '')
+        if datos.get('rol') == 'admin':
+            esperado = settings.ADMIN_REGISTRATION_CODE
+            if not esperado or not constant_time_compare(codigo, esperado):
+                raise serializers.ValidationError({'codigo_admin': 'Código de autorización inválido o registro de administradores no habilitado.'})
         usuario = Usuario(**{clave: valor for clave, valor in datos.items() if clave != 'password'})
         try:
             validate_password(datos['password'], usuario)
@@ -108,14 +137,16 @@ class ChatEntradaSerializer(serializers.Serializer):
     message = serializers.CharField(max_length=2000)
     confirm = serializers.BooleanField(required=False)
     accion_firmada = serializers.CharField(required=False)
+    contexto_firmado = serializers.CharField(required=False, max_length=16000)
 
 
 class ChatSalidaSerializer(serializers.Serializer):
     reply = serializers.CharField()
     intent = serializers.CharField()
     accion_firmada = serializers.CharField(required=False)
+    contexto_firmado = serializers.CharField(required=False, max_length=16000)
     data = serializers.JSONField(required=False)
-    pending_action = serializers.JSONField(required=False)
+    opciones = serializers.JSONField(required=False)
 
 
 class CotizacionSerializer(serializers.Serializer):
