@@ -9,7 +9,7 @@ from unittest import skipUnless
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import connection, close_old_connections
+from django.db import connection, connections, close_old_connections
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
@@ -56,6 +56,120 @@ class ApiFrontendTests(TestCase):
         datos = {'alojamiento': self.propiedad.pk, 'desde': self.desde.isoformat(), 'hasta': self.hasta.isoformat(), 'huespedes': 2}
         datos.update(cambios)
         return self.cliente.post('/api/v1/reservas/', datos, format='json')
+
+    def test_contacto_y_maps_se_guardan_y_aparecen_en_reserva(self):
+        self.ingresar()
+        datos = {'google_maps_url': 'https://maps.app.goo.gl/ejemplo', 'telefono_contacto': '+595 981 123456'}
+        respuesta = self.cliente.patch(self.ruta, datos, format='json')
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.propiedad.refresh_from_db()
+        self.assertEqual(self.propiedad.telefono_contacto, datos['telefono_contacto'])
+        self.ingresar(self.huesped)
+        detalle = self.cliente.get(self.ruta).data
+        self.assertEqual(detalle['google_maps_url'], datos['google_maps_url'])
+        self.assertNotIn('telefono', detalle['anfitrion'])
+        reserva = self.reservar()
+        self.assertEqual(reserva.status_code, 201, reserva.data)
+        self.assertEqual(reserva.data['propiedad']['telefono_contacto'], datos['telefono_contacto'])
+        self.ingresar(self.otro)
+        self.assertEqual(self.cliente.patch(self.ruta, datos, format='json').status_code, 403)
+
+    def test_valida_enlaces_maps_y_telefono_y_permite_borrarlos(self):
+        self.ingresar()
+        for enlace in ['https://example.com/maps', 'https://www.google.com.evil.test/maps', 'javascript:alert(1)', 'http://maps.google.com/', 'https://google.com/search?q=casa']:
+            self.assertEqual(self.cliente.patch(self.ruta, {'google_maps_url': enlace}, format='json').status_code, 400)
+        for telefono in ['abc123456', '+595<script>', '-------', '1234567890123456']:
+            self.assertEqual(self.cliente.patch(self.ruta, {'telefono_contacto': telefono}, format='json').status_code, 400)
+        for enlace in ['https://www.google.com/maps/place/Casa', 'https://goo.gl/maps/ejemplo', 'https://maps.app.goo.gl/ejemplo']:
+            self.assertEqual(self.cliente.patch(self.ruta, {'google_maps_url': enlace}, format='json').status_code, 200)
+        self.assertEqual(self.cliente.patch(self.ruta, {'google_maps_url': '', 'telefono_contacto': ''}, format='json').status_code, 200)
+
+    def chat_guiado(self, mensaje, anterior=None, **extra):
+        datos = {'message': mensaje}
+        if anterior:
+            datos['contexto_firmado'] = anterior.data['contexto_firmado']
+            if anterior.data.get('accion_firmada'):
+                datos['accion_firmada'] = anterior.data['accion_firmada']
+        datos.update(extra)
+        return self.cliente.post('/api/v1/asistente/', datos, format='json')
+
+    def preparar_chat(self):
+        self.ingresar(self.huesped)
+        resultado = self.chat_guiado('Busco alojamiento en Villarrica')
+        resultado = self.chat_guiado(f'{self.desde} al {self.hasta}', resultado)
+        resultado = self.chat_guiado('2', resultado)
+        self.assertEqual(resultado.data['opciones'][0]['id'], self.propiedad.pk)
+        return self.chat_guiado('la primera', resultado)
+
+    def test_chat_guiado_reserva_solo_tras_confirmar_y_no_duplica(self):
+        resultado = self.preparar_chat()
+        self.assertEqual(resultado.status_code, 200, resultado.data)
+        self.assertIn('accion_firmada', resultado.data)
+        self.assertIn('Cancelación:', resultado.data['reply'])
+        self.assertFalse(Reserva.objects.exists())
+        confirmada = self.chat_guiado('confirmo', resultado)
+        self.assertEqual(confirmada.data['intent'], 'create_reservation_confirmed')
+        reserva = Reserva.objects.get()
+        self.assertEqual(reserva.id_huesped, self.huesped)
+        self.assertEqual(reserva.cantidad_huespedes, 2)
+        self.assertEqual(reserva.estado, 'pendiente')
+        self.chat_guiado('confirmo', resultado)
+        self.assertEqual(Reserva.objects.count(), 1)
+
+    def test_chat_fechas_separadas_y_correcciones(self):
+        self.ingresar(self.huesped)
+        r = self.chat_guiado('Busco alojamiento en Villarrica')
+        r = self.chat_guiado(str(self.desde), r)
+        self.assertIn('salida', r.data['reply'])
+        r = self.chat_guiado(str(self.hasta), r)
+        self.assertIn('cuántos', r.data['reply'])
+        r = self.chat_guiado('somos 2', r)
+        r = self.chat_guiado('1', r)
+        r = self.chat_guiado('somos 3 personas', r)
+        self.assertIn('Huéspedes: 3', r.data['reply'])
+        r = self.chat_guiado('descartar', r)
+        self.assertNotIn('accion_firmada', r.data)
+        self.assertFalse(Reserva.objects.exists())
+
+    def test_chat_contexto_y_accion_no_se_pueden_suplantar(self):
+        r = self.preparar_chat()
+        self.ingresar(self.otro)
+        self.assertEqual(self.chat_guiado('confirmo', r).status_code, 400)
+        self.assertEqual(self.chat_guiado('revisar', r).status_code, 400)
+        self.ingresar(self.huesped)
+        self.assertEqual(self.chat_guiado('revisar', contexto_firmado=r.data['contexto_firmado'] + 'x').status_code, 400)
+        self.assertFalse(Reserva.objects.exists())
+
+    def test_chat_revalida_precio_y_disponibilidad(self):
+        r = self.preparar_chat()
+        self.propiedad.tarifa_limpieza += 100
+        self.propiedad.save()
+        self.assertEqual(self.chat_guiado('confirmo', r).status_code, 400)
+        self.assertFalse(Reserva.objects.exists())
+        actualizado = self.chat_guiado('revisar', r)
+        create_reservation(self.propiedad.pk, self.huesped.pk, self.desde, self.hasta, 1)
+        self.assertEqual(self.chat_guiado('confirmo', actualizado).data['intent'], 'create_reservation_error')
+        self.assertEqual(Reserva.objects.count(), 1)
+
+    def test_chat_consultas_por_ciudad_aisladas_por_rol(self):
+        create_reservation(self.propiedad.pk, self.huesped.pk, self.desde, self.hasta, 1)
+        for usuario, cantidad in [(self.anfitrion, 1), (self.otro, 0), (self.huesped, 1), (self.administrador, 1)]:
+            self.ingresar(usuario)
+            r = self.chat_guiado('en Villarrica cuantas reservas tengo')
+            self.assertEqual(r.data['data']['count'], cantidad)
+        r = self.chat_guiado('en Ciudad Inexistente cuantas reservas tengo')
+        self.assertEqual(r.data['data']['count'], 0)
+        self.ingresar(self.anfitrion)
+        self.assertEqual(self.chat_guiado('Quiero reservar').status_code, 403)
+
+    def test_chat_pide_anio_y_rechaza_fechas_invalidas(self):
+        self.ingresar(self.huesped)
+        r = self.chat_guiado('Busco alojamiento en Villarrica del 20 al 22 de diciembre')
+        self.assertIn('año', r.data['reply'])
+        r = self.chat_guiado(str(timezone.localdate().year + 1), r)
+        self.assertIn('cuántos', r.data['reply'])
+        r = self.chat_guiado('31/02/2099 al 03/03/2099', r)
+        self.assertIn('no es válida', r.data['reply'])
 
     def test_catalogo_paginado_oculta_datos_privados_y_pausados(self):
         Propiedad.objects.create(titulo='Pausada', descripcion='Privada', ubicacion='Asunción', precio_noche=1, precio_fin_semana=1, tarifa_limpieza=0, estado='pausada', id_anfitrion=self.otro)
@@ -208,7 +322,7 @@ class ApiFrontendTests(TestCase):
         self.assertEqual(self.cliente.post('/api/v1/asistente/', {'message': 'Cuantas reservas hay', 'user_id': self.administrador.pk}, format='json').status_code, 401)
         self.ingresar(self.huesped)
         respuesta = self.cliente.post('/api/v1/asistente/', {'message': 'Cuantas reservas hay', 'user_id': self.administrador.pk}, format='json')
-        self.assertEqual(respuesta.data['intent'], 'host_wrong_role')
+        self.assertEqual(respuesta.data['data']['count'], 0)
         respuesta = self.cliente.post('/api/v1/asistente/', {'message': 'confirmo', 'confirm': True, 'pending_action': {'type': 'create_reservation', 'data': {'guest_id': self.huesped.pk}}}, format='json')
         self.assertEqual(respuesta.status_code, 400)
         self.assertFalse(Reserva.objects.exists())
@@ -236,7 +350,7 @@ class ApiFrontendTests(TestCase):
         cliente.cookies['hospeda_renovacion'] = actual
         self.assertIn(cliente.post('/api/v1/auth/renovar/', {}, format='json', HTTP_X_CSRFTOKEN=csrf).status_code, [401, 403])
 
-    def test_registro_no_admite_admin_y_valida_contrasena(self):
+    def test_registro_rechaza_admin_sin_codigo_y_valida_contrasena(self):
         datos = {'username': 'nueva', 'email': 'nueva@example.com', 'password': 'UnaClaveLarga2026!', 'rol': 'admin'}
         self.assertEqual(self.cliente.post('/api/v1/auth/registro/', datos, format='json').status_code, 400)
         datos.update(rol='anfitrion', password='123')
@@ -245,6 +359,39 @@ class ApiFrontendTests(TestCase):
         respuesta = self.cliente.post('/api/v1/auth/registro/', datos, format='json')
         self.assertEqual(respuesta.status_code, 201, respuesta.data)
         self.assertFalse(Usuario.objects.get(username='nueva').is_superuser)
+
+    @override_settings(ADMIN_REGISTRATION_CODE='codigo-privado-de-prueba')
+    def test_registro_admin_exige_codigo_y_permite_ingreso(self):
+        datos = {'username': 'nuevoadmin', 'email': 'admin@example.com', 'password': 'UnaClaveLarga2026!', 'rol': 'admin'}
+        for codigo in ['', 'incorrecto']:
+            datos['codigo_admin'] = codigo
+            self.assertEqual(self.cliente.post('/api/v1/auth/registro/', datos, format='json').status_code, 400)
+        self.assertFalse(Usuario.objects.filter(username='nuevoadmin').exists())
+        datos['codigo_admin'] = 'codigo-privado-de-prueba'
+        respuesta = self.cliente.post('/api/v1/auth/registro/', datos, format='json')
+        self.assertEqual(respuesta.status_code, 201, respuesta.data)
+        self.assertEqual(respuesta.data['rol'], 'admin')
+        self.assertNotIn('codigo_admin', respuesta.data)
+        self.assertFalse(Usuario.objects.get(username='nuevoadmin').is_superuser)
+        respuesta = self.cliente.post('/api/v1/auth/ingresar/', {'username': datos['username'], 'password': datos['password']}, format='json')
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.data['usuario']['rol'], 'admin')
+
+    @override_settings(ADMIN_REGISTRATION_CODE='')
+    def test_registro_admin_deshabilitado_sin_configuracion(self):
+        datos = {'username': 'bloqueado', 'email': 'admin@example.com', 'password': 'UnaClaveLarga2026!', 'rol': 'admin', 'codigo_admin': 'cualquier-codigo'}
+        self.assertEqual(self.cliente.post('/api/v1/auth/registro/', datos, format='json').status_code, 400)
+        self.assertFalse(Usuario.objects.filter(username='bloqueado').exists())
+
+    def test_admin_supervisa_sin_participar_como_huesped(self):
+        self.ingresar(self.administrador)
+        for ruta in ['/api/v1/cuenta/panel/', '/api/v1/cuenta/usuarios/', '/api/v1/alojamientos/?mios=1', '/api/v1/reservas/']:
+            self.assertEqual(self.cliente.get(ruta).status_code, 200)
+        self.assertEqual(self.reservar().status_code, 403)
+        self.assertEqual(self.cliente.post(self.ruta + 'resenas/', {}, format='json').status_code, 403)
+        self.assertEqual(self.cliente.post(self.ruta + 'favorito/').status_code, 403)
+        self.assertFalse(Review.objects.exists())
+        self.assertFalse(Favorito.objects.exists())
 
     def test_login_limita_intentos_incorrectos(self):
         for _ in range(10):
@@ -277,7 +424,8 @@ class ConcurrenciaReservasTests(TransactionTestCase):
             except ValueError:
                 return 'ocupada'
             finally:
-                close_old_connections()
+                # Cada hilo debe cerrar incluso sus conexiones persistentes sanas.
+                connections.close_all()
         with ThreadPoolExecutor(max_workers=2) as ejecutor:
             resultados = list(ejecutor.map(lambda _: intento(), range(2)))
         self.assertCountEqual(resultados, ['creada', 'ocupada'])

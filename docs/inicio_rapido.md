@@ -89,3 +89,17 @@ npm.cmd audit
 - **Error 429:** esperar un minuto. Hay límites de solicitudes para evitar abuso.
 - **Swagger no carga su interfaz:** usa recursos CDN de la herramienta; la API y el archivo OpenAPI siguen disponibles. El frontend principal no depende de esos recursos.
 - **Producción:** seguir `seguridad_despliegue.md`; no publicar `runserver`, credenciales demo, SQLite o media local como infraestructura multiusuario.
+
+## Registrar un administrador
+
+Configurá `ADMIN_REGISTRATION_CODE` en el archivo `.env` del backend con un código privado de hasta 128 caracteres y reiniciá Django. En Crear cuenta, seleccioná Administrador del sistema e ingresá ese código. No lo compartas con huéspedes o anfitriones. Si la variable está vacía, el registro de administradores queda deshabilitado. En Docker, pasá esta variable al contenedor.
+
+El administrador consulta el panel general, los usuarios, todos los alojamientos y las reservas. No puede crear reservas, guardar favoritos ni publicar reseñas desde la API web.
+
+## Asistente por mensajes
+
+Entrá a **Asistente** desde el menú de una cuenta iniciada. El huésped puede escribir «Busco alojamiento en Villarrica» y responder ciudad, entrada, salida (con año) y cantidad total de huéspedes. El asistente consulta disponibilidad real, muestra hasta cinco opciones y permite elegir por número o nombre. Revisá el precio total, las reglas y la política de cancelación antes de confirmar con el botón o «confirmo». La solicitud queda pendiente del anfitrión; no se cobra online.
+
+Podés corregir fechas o cantidad de personas antes de confirmar, escribir «descartar» o comenzar una nueva conversación. La conversación actual vive en la pantalla y el contexto firmado vence al cabo de una hora; al recargar se empieza de nuevo. La confirmación vence a los 15 minutos. El sistema vuelve a comprobar disponibilidad y precio al confirmar.
+
+Anfitriones consultan solo reservas de sus alojamientos, huéspedes las propias y administradores las del sistema. Ejemplo: «En Villarrica cuántas reservas tengo» o «Mostrar reservas pendientes». Es un asistente guiado por reglas y datos del sistema, sin conexión a un modelo de lenguaje externo. Para fechas ambiguas pide precisión; no interpreta libremente cualquier expresión.
